@@ -1,11 +1,35 @@
-import { Tabs } from 'expo-router';
-import { Chrome as Home, Package, ShoppingCart, Users, ChartBar as BarChart3 } from 'lucide-react-native';
+import { Tabs, useRouter } from 'expo-router';
+import { View, TouchableOpacity } from 'react-native';
+import { Chrome as Home, Package, ShoppingCart, Users, ChartBar as BarChart3, Languages } from 'lucide-react-native';
+import { useLanguage } from '@/hooks/useLanguage';
 
 export default function TabLayout() {
+  const { toggleLanguage } = useLanguage();
+  
   return (
     <Tabs
       screenOptions={{
-        headerShown: false,
+        headerShown: true,
+        headerTitle: 'Phone Shop POS',
+        headerTitleStyle: {
+          fontWeight: 'bold',
+        },
+        headerRight: () => (
+          <TouchableOpacity
+            style={{
+              padding: 10,
+              marginRight: 10,
+              backgroundColor: '#2563EB',
+              borderRadius: 20,
+            }}
+            onPress={toggleLanguage}
+          >
+            <Languages size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        ),
+        headerStyle: {
+          backgroundColor: '#FFFFFF',
+        },
         tabBarActiveTintColor: '#2563EB',
         tabBarInactiveTintColor: '#6B7280',
         tabBarStyle: {

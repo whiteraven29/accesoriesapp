@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
+import { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, Dimensions } from 'react-native';
 import { Plus, Search, CreditCard as Edit, Trash2, Package } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 import { formatCurrency } from '@/utils/currency';
@@ -18,7 +18,7 @@ interface Product {
 
 export default function ProductsScreen() {
   const { t, isSwahili } = useLanguage();
-  const { products, addProduct, updateProduct, deleteProduct } = useProducts();
+  const { products, addProduct, updateProduct, deleteProduct, fetchProducts } = useProducts();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -31,6 +31,13 @@ export default function ProductsScreen() {
     pieces: 0,
     lowStockAlert: 5,
   });
+  const [refreshing, setRefreshing] = useState(false);
+  
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchProducts();
+    setRefreshing(false);
+  }, [fetchProducts]);
 
   const filteredProducts = products.filter(product =>
     product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -96,73 +103,41 @@ export default function ProductsScreen() {
     return products.reduce((total, product) => total + (product.sellingPrice * product.pieces), 0);
   };
 
-  const ProductCard = ({ product }: { product: Product }) => {
-    const profit = product.sellingPrice - product.buyingPrice;
-    const profitMargin = (profit / product.sellingPrice) * 100;
-    const isLowStock = product.pieces <= product.lowStockAlert;
-
+  const ProductTable = () => {
     return (
-      <View style={[styles.productCard, isLowStock && styles.lowStockCard]}>
-        <View style={styles.productHeader}>
-          <View style={styles.productInfo}>
-            <Text style={styles.productName}>{product.name}</Text>
-            <Text style={styles.productBrand}>{product.brand} • {product.category}</Text>
-          </View>
-          <View style={styles.productActions}>
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={() => handleEditProduct(product)}
-            >
-              <Edit size={16} color="#6B7280" />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={() => handleDeleteProduct(product.id)}
-            >
-              <Trash2 size={16} color="#DC2626" />
-            </TouchableOpacity>
-          </View>
+      <View style={styles.tableContainer}>
+        <View style={styles.tableHeader}>
+          <Text style={[styles.tableHeaderText, { flex: 2 }]}>{t('productName')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('brand')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('category')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('buyingPrice')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('sellingPrice')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('pieces')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('actions')}</Text>
         </View>
-        
-        <View style={styles.productDetails}>
-          <View style={styles.priceRow}>
-            <View>
-              <Text style={styles.label}>{t('buyingPrice')}</Text>
-              <Text style={styles.buyingPrice}>{formatCurrency(product.buyingPrice)}</Text>
-            </View>
-            <View>
-              <Text style={styles.label}>{t('sellingPrice')}</Text>
-              <Text style={styles.sellingPrice}>{formatCurrency(product.sellingPrice)}</Text>
-            </View>
-            <View>
-              <Text style={styles.label}>{t('profit')}</Text>
-              <Text style={[styles.profit, { color: profit > 0 ? '#16A34A' : '#DC2626' }]}>
-                {formatCurrency(profit)} ({profitMargin.toFixed(1)}%)
-              </Text>
-            </View>
-          </View>
+        {filteredProducts.map((product) => {
+          const profit = product.sellingPrice - product.buyingPrice;
+          const isLowStock = product.pieces <= product.lowStockAlert;
           
-          <View style={styles.stockRow}>
-            <View>
-              <Text style={styles.label}>{t('pieces')}</Text>
-              <Text style={[styles.stockValue, isLowStock && styles.lowStockText]}>
-                {product.pieces}
-              </Text>
+          return (
+            <View key={product.id} style={styles.tableRow}>
+              <Text style={[styles.tableCell, { flex: 2 }]}>{product.name}</Text>
+              <Text style={[styles.tableCell, { flex: 1 }]}>{product.brand}</Text>
+              <Text style={[styles.tableCell, { flex: 1 }]}>{product.category}</Text>
+              <Text style={[styles.tableCell, { flex: 1, color: '#DC2626' }]}>{formatCurrency(product.buyingPrice)}</Text>
+              <Text style={[styles.tableCell, { flex: 1, color: '#16A34A' }]}>{formatCurrency(product.sellingPrice)}</Text>
+              <Text style={[styles.tableCell, { flex: 1, color: isLowStock ? '#DC2626' : '#111827' }]}>{product.pieces}</Text>
+              <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity onPress={() => handleEditProduct(product)}>
+                  <Edit size={16} color="#6B7280" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleDeleteProduct(product.id)}>
+                  <Trash2 size={16} color="#DC2626" />
+                </TouchableOpacity>
+              </View>
             </View>
-            <View>
-              <Text style={styles.label}>{t('totalValue')}</Text>
-              <Text style={styles.totalValue}>
-                {formatCurrency(product.sellingPrice * product.pieces)}
-              </Text>
-            </View>
-          </View>
-          
-          {isLowStock && (
-            <Text style={styles.lowStockWarning}>
-              ⚠️ {t('lowStockWarning')} ({t('threshold')}: {product.lowStockAlert})
-            </Text>
-          )}
-        </View>
+          );
+        })}
       </View>
     );
   };
@@ -204,11 +179,15 @@ export default function ProductsScreen() {
         />
       </View>
 
-      <ScrollView style={styles.productsList} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.productsList}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {filteredProducts.length > 0 ? (
-          filteredProducts.map(product => (
-            <ProductCard key={product.id} product={product} />
-          ))
+          <ProductTable />
         ) : (
           <View style={styles.emptyState}>
             <Package size={48} color="#9CA3AF" />
@@ -350,6 +329,8 @@ export default function ProductsScreen() {
   );
 }
 
+const { width, height } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -359,30 +340,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    paddingTop: 60,
+    padding: width * 0.03,
+    paddingTop: width * 0.12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
   title: {
-    fontSize: 24,
+    fontSize: width * 0.06,
     fontWeight: 'bold',
     color: '#111827',
   },
   addButton: {
     backgroundColor: '#2563EB',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: width * 0.1,
+    height: width * 0.1,
+    borderRadius: width * 0.05,
     justifyContent: 'center',
     alignItems: 'center',
   },
   statsBar: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingVertical: width * 0.03,
+    paddingHorizontal: width * 0.03,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
@@ -391,41 +372,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 18,
+    fontSize: width * 0.045,
     fontWeight: 'bold',
     color: '#111827',
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: width * 0.03,
     color: '#6B7280',
-    marginTop: 2,
+    marginTop: width * 0.005,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    margin: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    margin: width * 0.03,
+    paddingHorizontal: width * 0.03,
+    paddingVertical: width * 0.025,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: width * 0.025,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
   searchInput: {
     flex: 1,
-    marginLeft: 8,
-    fontSize: 16,
+    marginLeft: width * 0.02,
+    fontSize: width * 0.04,
     color: '#111827',
   },
   productsList: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: width * 0.03,
   },
   productCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: width * 0.03,
+    padding: width * 0.03,
+    marginBottom: width * 0.025,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -433,61 +414,61 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   lowStockCard: {
-    borderLeftWidth: 4,
+    borderLeftWidth: width * 0.01,
     borderLeftColor: '#DC2626',
   },
   productHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: width * 0.025,
   },
   productInfo: {
     flex: 1,
   },
   productName: {
-    fontSize: 18,
+    fontSize: width * 0.045,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 4,
+    marginBottom: width * 0.01,
   },
   productBrand: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     color: '#6B7280',
   },
   productActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: width * 0.02,
   },
   actionButton: {
-    padding: 8,
-    borderRadius: 8,
+    padding: width * 0.02,
+    borderRadius: width * 0.02,
     backgroundColor: '#F3F4F6',
   },
   productDetails: {
-    gap: 12,
+    gap: width * 0.025,
   },
   priceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   label: {
-    fontSize: 12,
+    fontSize: width * 0.03,
     color: '#6B7280',
-    marginBottom: 2,
+    marginBottom: width * 0.005,
   },
   buyingPrice: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     fontWeight: '600',
     color: '#DC2626',
   },
   sellingPrice: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     fontWeight: '600',
     color: '#16A34A',
   },
   profit: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     fontWeight: '600',
   },
   stockRow: {
@@ -495,7 +476,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   stockValue: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: 'bold',
     color: '#111827',
   },
@@ -503,31 +484,31 @@ const styles = StyleSheet.create({
     color: '#DC2626',
   },
   totalValue: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: 'bold',
     color: '#2563EB',
   },
   lowStockWarning: {
-    fontSize: 12,
+    fontSize: width * 0.03,
     color: '#D97706',
     fontStyle: 'italic',
-    marginTop: 4,
+    marginTop: width * 0.01,
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 64,
+    paddingVertical: width * 0.12,
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: width * 0.045,
     fontWeight: '600',
     color: '#6B7280',
-    marginTop: 16,
-    marginBottom: 8,
+    marginTop: width * 0.03,
+    marginBottom: width * 0.02,
   },
   emptyDescription: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     color: '#9CA3AF',
     textAlign: 'center',
   },
@@ -539,44 +520,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    paddingTop: 60,
+    padding: width * 0.03,
+    paddingTop: width * 0.12,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: width * 0.045,
     fontWeight: 'bold',
     color: '#111827',
   },
   cancelButton: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     color: '#6B7280',
   },
   saveButton: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: '600',
     color: '#2563EB',
   },
   modalContent: {
     flex: 1,
-    padding: 16,
+    padding: width * 0.03,
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: width * 0.03,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     fontWeight: '600',
     color: '#374151',
-    marginBottom: 8,
+    marginBottom: width * 0.02,
   },
   textInput: {
     borderWidth: 1,
     borderColor: '#D1D5DB',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
+    borderRadius: width * 0.025,
+    padding: width * 0.03,
+    fontSize: width * 0.04,
     color: '#111827',
     backgroundColor: '#FFFFFF',
   },
@@ -586,20 +567,20 @@ const styles = StyleSheet.create({
   },
   calculationCard: {
     backgroundColor: '#F3F4F6',
-    padding: 16,
-    borderRadius: 12,
-    marginTop: 16,
+    padding: width * 0.03,
+    borderRadius: width * 0.025,
+    marginTop: width * 0.03,
   },
   calculationTitle: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 12,
+    marginBottom: width * 0.025,
   },
   calculationRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: width * 0.02,
   },
   profitValue: {
     fontWeight: '600',
@@ -608,5 +589,40 @@ const styles = StyleSheet.create({
   totalCostValue: {
     fontWeight: '600',
     color: '#2563EB',
+  },
+  tableContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: width * 0.03,
+    marginHorizontal: width * 0.03,
+    marginBottom: width * 0.03,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    paddingVertical: width * 0.025,
+    paddingHorizontal: width * 0.03,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  tableHeaderText: {
+    fontSize: width * 0.035,
+    fontWeight: 'bold',
+    color: '#374151',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: width * 0.025,
+    paddingHorizontal: width * 0.03,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  tableCell: {
+    fontSize: width * 0.035,
+    color: '#111827',
   },
 });

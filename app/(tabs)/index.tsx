@@ -1,22 +1,33 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3, Languages } from 'lucide-react-native';
+import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3 } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 import { formatCurrency } from '@/utils/currency';
+import { useProducts } from '@/hooks/useProducts';
+import { useCustomers } from '@/hooks/useCustomers';
+import { useSales } from '@/hooks/useSales';
 
 export default function HomeScreen() {
-  const { t, isSwahili, toggleLanguage } = useLanguage();
+  const router = useRouter();
+  const { t, isSwahili } = useLanguage();
+  const { products } = useProducts();
+  const { customers } = useCustomers();
+  const { sales, getTodaysSales, getTotalSales } = useSales();
   
-  // Mock data - in real app, this would come from your state management/API
+  // Calculate dashboard data from real data
   const dashboardData = {
-    todaySales: 850000,
-    todayProfit: 285000,
-    totalProducts: 342,
-    lowStockItems: 12,
-    totalCustomers: 156,
-    pendingLoans: 450000,
-    salesTrend: 12.5,
-    profitTrend: -2.3,
+    todaySales: getTodaysSales().reduce((total, sale) => total + sale.total, 0),
+    todayProfit: getTodaysSales().reduce((total, sale) => total + (sale.total - sale.items.reduce((cost, item) => {
+      const product = products.find(p => p.id === item.productId);
+      return cost + (product ? product.buyingPrice * item.quantity : 0);
+    }, 0)), 0),
+    totalProducts: products.length,
+    lowStockItems: products.filter(product => product.pieces <= product.lowStockAlert).length,
+    totalCustomers: customers.length,
+    pendingLoans: customers.reduce((total, customer) => total + customer.loanBalance, 0),
+    salesTrend: 0, // This would need to be calculated from historical data
+    profitTrend: 0, // This would need to be calculated from historical data
   };
 
   const StatCard = ({ 
@@ -72,9 +83,6 @@ export default function HomeScreen() {
               {isSwahili ? 'Duka la Simu' : 'Phone Shop POS'}
             </Text>
           </View>
-          <TouchableOpacity style={styles.languageButton} onPress={toggleLanguage}>
-            <Languages size={24} color="#FFFFFF" />
-          </TouchableOpacity>
         </View>
         <Text style={styles.date}>
           {new Date().toLocaleDateString(isSwahili ? 'sw-TZ' : 'en-TZ')}
@@ -146,30 +154,32 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>{t('quickActions')}</Text>
         
         <View style={styles.actionGrid}>
-          <TouchableOpacity style={styles.actionCard}>
-            <ShoppingCart size={32} color="#2563EB" />
-            <Text style={styles.actionText}>{t('newSale')}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.actionCard}>
-            <Package size={32} color="#16A34A" />
-            <Text style={styles.actionText}>{t('addProduct')}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.actionCard}>
-            <Users size={32} color="#7C3AED" />
-            <Text style={styles.actionText}>{t('addCustomer')}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.actionCard}>
-            <BarChart3 size={32} color="#DC2626" />
-            <Text style={styles.actionText}>{t('viewReports')}</Text>
-          </TouchableOpacity>
-        </View>
+                  <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/sales')}>
+                    <ShoppingCart size={32} color="#2563EB" />
+                    <Text style={styles.actionText}>{t('newSale')}</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/products')}>
+                    <Package size={32} color="#16A34A" />
+                    <Text style={styles.actionText}>{t('addProduct')}</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/customers')}>
+                    <Users size={32} color="#7C3AED" />
+                    <Text style={styles.actionText}>{t('addCustomer')}</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/reports')}>
+                    <BarChart3 size={32} color="#DC2626" />
+                    <Text style={styles.actionText}>{t('viewReports')}</Text>
+                  </TouchableOpacity>
+                </View>
       </View>
     </ScrollView>
   );
 }
+
+const { width, height } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
   container: {
@@ -177,10 +187,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
   },
   header: {
-    padding: 24,
-    paddingTop: 60,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    padding: width * 0.05,
+    paddingTop: width * 0.12,
+    borderBottomLeftRadius: width * 0.05,
+    borderBottomRightRadius: width * 0.05,
   },
   headerTop: {
     flexDirection: 'row',
@@ -188,37 +198,32 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   greeting: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     color: '#E5E7EB',
-    marginBottom: 4,
+    marginBottom: width * 0.01,
   },
   businessName: {
-    fontSize: 28,
+    fontSize: width * 0.07,
     fontWeight: 'bold',
     color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  languageButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    marginBottom: width * 0.01,
   },
   date: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     color: '#CBD5E1',
-    marginTop: 8,
+    marginTop: width * 0.02,
   },
   statsGrid: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginTop: 16,
-    gap: 12,
+    paddingHorizontal: width * 0.03,
+    marginTop: width * 0.03,
+    gap: width * 0.025,
   },
   statCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 16,
+    padding: width * 0.03,
+    borderRadius: width * 0.03,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -229,55 +234,55 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: width * 0.025,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: width * 0.12,
+    height: width * 0.12,
+    borderRadius: width * 0.025,
     justifyContent: 'center',
     alignItems: 'center',
   },
   trendContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 4,
+    paddingHorizontal: width * 0.02,
+    paddingVertical: width * 0.01,
+    borderRadius: width * 0.015,
+    gap: width * 0.01,
   },
   trendText: {
-    fontSize: 12,
+    fontSize: width * 0.03,
     fontWeight: '600',
   },
   statValue: {
-    fontSize: 24,
+    fontSize: width * 0.06,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 4,
+    marginBottom: width * 0.01,
   },
   statTitle: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     color: '#6B7280',
   },
   alertsSection: {
-    padding: 16,
-    marginTop: 8,
+    padding: width * 0.03,
+    marginTop: width * 0.02,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: width * 0.05,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 16,
+    marginBottom: width * 0.03,
   },
   alertCard: {
     backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
+    padding: width * 0.03,
+    borderRadius: width * 0.025,
+    marginBottom: width * 0.02,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: width * 0.03,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -288,28 +293,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   alertTitle: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 2,
+    marginBottom: width * 0.005,
   },
   alertDescription: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     color: '#6B7280',
   },
   quickActions: {
-    padding: 16,
-    paddingBottom: 32,
+    padding: width * 0.03,
+    paddingBottom: width * 0.06,
   },
   actionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: width * 0.025,
   },
   actionCard: {
     backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderRadius: 16,
+    padding: width * 0.04,
+    borderRadius: width * 0.03,
     width: '47%',
     alignItems: 'center',
     shadowColor: '#000',
@@ -319,8 +324,8 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   actionText: {
-    marginTop: 8,
-    fontSize: 14,
+    marginTop: width * 0.02,
+    fontSize: width * 0.035,
     fontWeight: '600',
     color: '#374151',
     textAlign: 'center',
