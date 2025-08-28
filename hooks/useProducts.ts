@@ -31,7 +31,13 @@ export function useProducts() {
           table: 'products',
         },
         (payload) => {
-          setProducts((prev) => [...prev, payload.new as Product]);
+          const newProduct = {
+            ...payload.new,
+            buyingPrice: payload.new.buying_price,
+            sellingPrice: payload.new.selling_price,
+            lowStockAlert: payload.new.low_stock_alert,
+          };
+          setProducts((prev) => [...prev, newProduct as Product]);
         }
       )
       .on(
@@ -42,9 +48,15 @@ export function useProducts() {
           table: 'products',
         },
         (payload) => {
+          const updatedProduct = {
+            ...payload.new,
+            buyingPrice: payload.new.buying_price,
+            sellingPrice: payload.new.selling_price,
+            lowStockAlert: payload.new.low_stock_alert,
+          };
           setProducts((prev) =>
             prev.map((product) =>
-              product.id === payload.new.id ? (payload.new as Product) : product
+              product.id === payload.new.id ? (updatedProduct as Product) : product
             )
           );
         }
@@ -78,7 +90,15 @@ export function useProducts() {
       return;
     }
 
-    setProducts(data || []);
+    // Map database fields to interface fields
+    const mappedProducts = (data || []).map(product => ({
+      ...product,
+      buyingPrice: product.buying_price,
+      sellingPrice: product.selling_price,
+      lowStockAlert: product.low_stock_alert,
+    }));
+
+    setProducts(mappedProducts);
   };
 
   const addProduct = async (productData: Omit<Product, 'id' | 'created_at'>) => {
@@ -103,7 +123,13 @@ export function useProducts() {
       return null;
     }
 
-    return data;
+    // Map the returned data to match the interface
+    return {
+      ...data,
+      buyingPrice: data.buying_price,
+      sellingPrice: data.selling_price,
+      lowStockAlert: data.low_stock_alert,
+    };
   };
 
   const updateProduct = async (id: string, productData: Omit<Product, 'id' | 'created_at'>) => {
@@ -127,7 +153,13 @@ export function useProducts() {
       return null;
     }
 
-    return data;
+    // Map the returned data to match the interface
+    return {
+      ...data,
+      buyingPrice: data.buying_price,
+      sellingPrice: data.selling_price,
+      lowStockAlert: data.low_stock_alert,
+    };
   };
 
   const deleteProduct = async (id: string) => {
@@ -161,7 +193,13 @@ export function useProducts() {
       return null;
     }
 
-    return data;
+    // Map the returned data to match the interface
+    return {
+      ...data,
+      buyingPrice: data.buying_price,
+      sellingPrice: data.selling_price,
+      lowStockAlert: data.low_stock_alert,
+    };
   };
 
   return {

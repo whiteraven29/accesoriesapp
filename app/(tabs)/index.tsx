@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3 } from 'lucide-react-native';
-import { useLanguage } from '@/hooks/useLanguage';
+import { useLanguage } from '@/hooks/LanguageContext';
 import { formatCurrency } from '@/utils/currency';
 import { useProducts } from '@/hooks/useProducts';
 import { useCustomers } from '@/hooks/useCustomers';
@@ -14,6 +14,7 @@ export default function HomeScreen() {
   const { products } = useProducts();
   const { customers } = useCustomers();
   const { sales, getTodaysSales, getTotalSales } = useSales();
+  const { width, height } = useWindowDimensions();
   
   // Calculate dashboard data from real data
   const dashboardData = {
@@ -67,6 +68,8 @@ export default function HomeScreen() {
       <Text style={styles.statTitle}>{title}</Text>
     </View>
   );
+
+  const styles = createStyles(width);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -179,9 +182,7 @@ export default function HomeScreen() {
   );
 }
 
-const { width, height } = Dimensions.get('window');
-
-const styles = StyleSheet.create({
+const createStyles = (width: number) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',

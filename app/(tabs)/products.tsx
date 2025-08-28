@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, Dimensions } from 'react-native';
 import { Plus, Search, CreditCard as Edit, Trash2, Package } from 'lucide-react-native';
-import { useLanguage } from '@/hooks/useLanguage';
+import { useLanguage } from '@/hooks/LanguageContext';
 import { formatCurrency } from '@/utils/currency';
 import { useProducts } from '@/hooks/useProducts';
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
-import { ChartBar as BarChart3, Calendar, TrendingUp, TrendingDown, Package, Users, DollarSign } from 'lucide-react-native';
-import { useLanguage } from '@/hooks/useLanguage';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, useWindowDimensions } from 'react-native';
+import { ChartBar as BarChart3, Calendar, TrendingUp, TrendingDown, Package, Users, DollarSign, RefreshCw } from 'lucide-react-native';
+import { useLanguage } from '@/hooks/LanguageContext';
 import { formatCurrency } from '@/utils/currency';
 import { useProducts } from '@/hooks/useProducts';
 import { useCustomers } from '@/hooks/useCustomers';
@@ -9,10 +9,22 @@ import { useSales } from '@/hooks/useSales';
 
 export default function ReportsScreen() {
   const { t } = useLanguage();
-  const { products } = useProducts();
-  const { customers } = useCustomers();
-  const { sales, getTotalSales } = useSales();
+  const { products, fetchProducts } = useProducts();
+  const { customers, fetchCustomers } = useCustomers();
+  const { sales, getTotalSales, fetchSales } = useSales();
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
+  const [refreshing, setRefreshing] = useState(false);
+  const { width } = useWindowDimensions();
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      fetchProducts(),
+      fetchCustomers(),
+      fetchSales()
+    ]);
+    setRefreshing(false);
+  };
 
   const calculateProfitLoss = () => {
     const totalRevenue = getTotalSales();
@@ -92,6 +104,8 @@ export default function ReportsScreen() {
     </View>
   );
 
+  const styles = createStyles(width);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -112,7 +126,13 @@ export default function ReportsScreen() {
         ))}
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* Profit & Loss Summary */}
         <Text style={styles.sectionTitle}>Profit & Loss Summary</Text>
         <View style={styles.profitLossCard}>
@@ -267,20 +287,20 @@ export default function ReportsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (width: number) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
   header: {
-    padding: 16,
-    paddingTop: 60,
+    padding: width * 0.04,
+    paddingTop: width * 0.15,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
   title: {
-    fontSize: 24,
+    fontSize: width * 0.06,
     fontWeight: 'bold',
     color: '#111827',
     textAlign: 'center',
@@ -288,24 +308,24 @@ const styles = StyleSheet.create({
   periodSelector: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: width * 0.04,
+    paddingVertical: width * 0.03,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
-    gap: 8,
+    gap: width * 0.02,
   },
   periodButton: {
     flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingVertical: width * 0.02,
+    paddingHorizontal: width * 0.04,
+    borderRadius: width * 0.02,
     alignItems: 'center',
   },
   activePeriod: {
     backgroundColor: '#2563EB',
   },
   periodText: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     color: '#6B7280',
     fontWeight: '600',
   },
@@ -314,20 +334,20 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 16,
+    padding: width * 0.04,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: width * 0.045,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 12,
-    marginTop: 16,
+    marginBottom: width * 0.03,
+    marginTop: width * 0.04,
   },
   profitLossCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: width * 0.04,
+    padding: width * 0.04,
+    marginBottom: width * 0.04,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -338,40 +358,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: width * 0.04,
   },
   profitLossTitle: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: 'bold',
     color: '#111827',
   },
   profitLossGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
+    gap: width * 0.04,
   },
   profitLossItem: {
     width: '47%',
   },
   profitLossLabel: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     color: '#6B7280',
-    marginBottom: 4,
+    marginBottom: width * 0.01,
   },
   profitLossValue: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: 'bold',
   },
   statsGrid: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 8,
+    gap: width * 0.03,
+    marginBottom: width * 0.02,
   },
   statCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 16,
+    padding: width * 0.04,
+    borderRadius: width * 0.04,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -382,47 +402,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: width * 0.03,
   },
   iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+    width: width * 0.1,
+    height: width * 0.1,
+    borderRadius: width * 0.02,
     justifyContent: 'center',
     alignItems: 'center',
   },
   trendContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    gap: 2,
+    paddingHorizontal: width * 0.015,
+    paddingVertical: width * 0.005,
+    borderRadius: width * 0.015,
+    gap: width * 0.005,
   },
   trendText: {
-    fontSize: 10,
+    fontSize: width * 0.025,
     fontWeight: '600',
   },
   statValue: {
-    fontSize: 18,
+    fontSize: width * 0.045,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 4,
+    marginBottom: width * 0.01,
   },
   statTitle: {
-    fontSize: 12,
+    fontSize: width * 0.03,
     color: '#6B7280',
   },
   statSubtitle: {
-    fontSize: 10,
+    fontSize: width * 0.025,
     color: '#9CA3AF',
-    marginTop: 2,
+    marginTop: width * 0.005,
   },
   lowStockCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: width * 0.04,
+    padding: width * 0.04,
+    marginBottom: width * 0.04,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -433,36 +453,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: width * 0.02,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
   lowStockName: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     fontWeight: '600',
     color: '#111827',
   },
   lowStockBrand: {
-    fontSize: 12,
+    fontSize: width * 0.03,
     color: '#6B7280',
   },
   lowStockQty: {
     alignItems: 'center',
   },
   lowStockNumber: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: 'bold',
     color: '#DC2626',
   },
   lowStockLabel: {
-    fontSize: 10,
+    fontSize: width * 0.025,
     color: '#6B7280',
   },
   topProductsCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: width * 0.04,
+    padding: width * 0.04,
+    marginBottom: width * 0.04,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -472,53 +492,53 @@ const styles = StyleSheet.create({
   topProductItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: width * 0.03,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
   productRank: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: width * 0.08,
+    height: width * 0.08,
+    borderRadius: width * 0.04,
     backgroundColor: '#2563EB',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: width * 0.03,
   },
   rankNumber: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: width * 0.035,
     fontWeight: 'bold',
   },
   productDetails: {
     flex: 1,
   },
   productName: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     fontWeight: '600',
     color: '#111827',
   },
   productBrand: {
-    fontSize: 12,
+    fontSize: width * 0.03,
     color: '#6B7280',
   },
   productStats: {
     alignItems: 'flex-end',
   },
   productValue: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     fontWeight: 'bold',
     color: '#16A34A',
   },
   productQty: {
-    fontSize: 12,
+    fontSize: width * 0.03,
     color: '#6B7280',
   },
   customerInsights: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 32,
+    borderRadius: width * 0.04,
+    padding: width * 0.04,
+    marginBottom: width * 0.08,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -529,16 +549,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: width * 0.03,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
   insightLabel: {
-    fontSize: 14,
+    fontSize: width * 0.035,
     color: '#6B7280',
   },
   insightValue: {
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: 'bold',
     color: '#111827',
   },

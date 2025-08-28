@@ -51,6 +51,17 @@ create table sale_items (
   price numeric not null
 );
 
+-- Create losses table
+create table losses (
+  id uuid default gen_random_uuid() primary key,
+  product_id uuid references products(id) on delete set null,
+  quantity integer not null,
+  reason text not null,
+  description text,
+  loss_value numeric not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 -- Set up Row Level Security (RLS)
 -- See https://supabase.com/docs/guides/auth/row-level-security for more details.
 alter table customers enable row level security;
@@ -58,3 +69,4 @@ alter table customer_loan_history enable row level security;
 alter table products enable row level security;
 alter table sales enable row level security;
 alter table sale_items enable row level security;
+alter table losses enable row level security;

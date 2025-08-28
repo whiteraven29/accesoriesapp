@@ -1,26 +1,37 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, Dimensions } from 'react-native';
-import { ShoppingCart, Plus, Minus, Trash2, Calculator } from 'lucide-react-native';
-import { useLanguage } from '@/hooks/useLanguage';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions } from 'react-native';
+import { ShoppingCart, Plus, Minus, Trash2, Calculator, Users, CreditCard } from 'lucide-react-native';
+import { useLanguage } from '@/hooks/LanguageContext';
 import { formatCurrency } from '@/utils/currency';
 import { useProducts } from '@/hooks/useProducts';
 import { useSales } from '@/hooks/useSales';
+import { useCustomers } from '@/hooks/useCustomers';
 
 interface CartItem {
   productId: string;
   quantity: number;
+  useLoanPrice?: boolean;
+  loanDiscount?: number;
 }
 
 export default function SalesScreen() {
   const { t } = useLanguage();
   const { products, updateProductStock, fetchProducts } = useProducts();
   const { addSale, fetchSales } = useSales();
+  const { customers, addLoan } = useCustomers();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
   const [cashReceived, setCashReceived] = useState<number>(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  
+  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [showLoanModal, setShowLoanModal] = useState(false);
+  const [currentLoanItem, setCurrentLoanItem] = useState<CartItem | null>(null);
+  const [loanDiscount, setLoanDiscount] = useState<number>(0);
+  const { width } = useWindowDimensions();
+  const styles = createStyles(width);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     // Refresh both products and sales data
@@ -80,8 +91,43 @@ export default function SalesScreen() {
   const getCartTotal = () => {
     return cart.reduce((total, item) => {
       const product = products.find(p => p.id === item.productId);
-      return total + (product ? product.sellingPrice * item.quantity : 0);
+      if (!product) return total;
+
+      const basePrice = product.sellingPrice;
+      const finalPrice = item.useLoanPrice && item.loanDiscount
+        ? basePrice - (basePrice * item.loanDiscount / 100)
+        : basePrice;
+
+      return total + (finalPrice * item.quantity);
     }, 0);
+  };
+
+  const selectCustomer = (customerId: string | null) => {
+    setSelectedCustomer(customerId);
+    setShowCustomerModal(false);
+  };
+
+  const applyLoanPricing = (productId: string) => {
+    const cartItem = cart.find(item => item.productId === productId);
+    if (cartItem) {
+      setCurrentLoanItem(cartItem);
+      setShowLoanModal(true);
+    }
+  };
+
+  const confirmLoanPricing = () => {
+    if (currentLoanItem && loanDiscount > 0 && loanDiscount <= 100) {
+      setCart(prev => prev.map(item =>
+        item.productId === currentLoanItem.productId
+          ? { ...item, useLoanPrice: true, loanDiscount }
+          : item
+      ));
+      setShowLoanModal(false);
+      setCurrentLoanItem(null);
+      setLoanDiscount(0);
+    } else {
+      Alert.alert(t('error'), 'Please enter a valid discount percentage (1-100%)');
+    }
   };
 
   const handleCheckout = () => {
@@ -92,11 +138,33 @@ export default function SalesScreen() {
     setShowCheckout(true);
   };
 
-  const completeSale = () => {
+  const completeSale = async () => {
     const total = getCartTotal();
     if (cashReceived < total) {
       Alert.alert(t('error'), 'Insufficient cash received');
       return;
+    }
+
+    // Calculate loan amounts and create loan records if customer is selected
+    if (selectedCustomer) {
+      const loanItems = cart.filter(item => item.useLoanPrice && item.loanDiscount);
+      if (loanItems.length > 0) {
+        let totalLoanAmount = 0;
+
+        for (const item of loanItems) {
+          const product = products.find(p => p.id === item.productId);
+          if (product && item.loanDiscount) {
+            const originalPrice = product.sellingPrice * item.quantity;
+            const discountedPrice = originalPrice - (originalPrice * item.loanDiscount / 100);
+            const loanAmount = originalPrice - discountedPrice;
+            totalLoanAmount += loanAmount;
+          }
+        }
+
+        if (totalLoanAmount > 0) {
+          await addLoan(selectedCustomer, totalLoanAmount, `Loan for sale items`);
+        }
+      }
     }
 
     // Update product stock
@@ -107,24 +175,35 @@ export default function SalesScreen() {
       }
     });
 
-    // Add sale record
+    // Add sale record with correct pricing
     addSale(
       {
         total,
         cashReceived,
         change: cashReceived - total,
       },
-      cart.map(item => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        price: products.find(p => p.id === item.productId)?.sellingPrice || 0,
-      }))
+      cart.map(item => {
+        const product = products.find(p => p.id === item.productId);
+        if (!product) return { productId: item.productId, quantity: item.quantity, price: 0 };
+
+        const basePrice = product.sellingPrice;
+        const finalPrice = item.useLoanPrice && item.loanDiscount
+          ? basePrice - (basePrice * item.loanDiscount / 100)
+          : basePrice;
+
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          price: finalPrice,
+        };
+      })
     );
 
     // Reset
     setCart([]);
     setCashReceived(0);
     setShowCheckout(false);
+    setSelectedCustomer(null);
 
     Alert.alert(t('success'), 'Sale completed successfully!');
   };
@@ -201,13 +280,35 @@ export default function SalesScreen() {
         {cart.map(item => {
           const product = products.find(p => p.id === item.productId);
           if (!product) return null;
-          
+
+          const basePrice = product.sellingPrice;
+          const finalPrice = item.useLoanPrice && item.loanDiscount
+            ? basePrice - (basePrice * item.loanDiscount / 100)
+            : basePrice;
+          const totalItemPrice = finalPrice * item.quantity;
+
           return (
             <View key={item.productId} style={styles.cartItem}>
-              <Text style={styles.cartItemName}>{product.name}</Text>
+              <View style={styles.cartItemHeader}>
+                <Text style={styles.cartItemName}>{product.name}</Text>
+                {selectedCustomer && (
+                  <TouchableOpacity
+                    style={styles.loanButton}
+                    onPress={() => applyLoanPricing(item.productId)}
+                  >
+                    <CreditCard size={16} color="#FFFFFF" />
+                    <Text style={styles.loanButtonText}>Loan</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               <Text style={styles.cartItemDetails}>
-                {item.quantity} x {formatCurrency(product.sellingPrice)} = {formatCurrency(product.sellingPrice * item.quantity)}
+                {item.quantity} x {formatCurrency(finalPrice)} = {formatCurrency(totalItemPrice)}
               </Text>
+              {item.useLoanPrice && item.loanDiscount && (
+                <Text style={styles.loanDiscountText}>
+                  Loan discount: {item.loanDiscount}% off original price {formatCurrency(basePrice)}
+                </Text>
+              )}
             </View>
           );
         })}
@@ -223,10 +324,33 @@ export default function SalesScreen() {
     );
   };
 
+  const selectedCustomerData = customers.find(c => c.id === selectedCustomer);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{t('pointOfSale')}</Text>
+      </View>
+
+      {/* Customer Selection */}
+      <View style={styles.customerSection}>
+        <TouchableOpacity
+          style={styles.customerButton}
+          onPress={() => setShowCustomerModal(true)}
+        >
+          <Users size={20} color="#FFFFFF" />
+          <Text style={styles.customerButtonText}>
+            {selectedCustomerData ? selectedCustomerData.name : t('selectCustomer')}
+          </Text>
+        </TouchableOpacity>
+        {selectedCustomerData && (
+          <View style={styles.customerInfo}>
+            <Text style={styles.customerName}>{selectedCustomerData.name}</Text>
+            <Text style={styles.customerBalance}>
+              Loan Balance: {formatCurrency(selectedCustomerData.loanBalance)}
+            </Text>
+          </View>
+        )}
       </View>
 
       <TextInput
@@ -313,13 +437,111 @@ export default function SalesScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Customer Selection Modal */}
+      <Modal visible={showCustomerModal} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowCustomerModal(false)}>
+              <Text style={styles.cancelButton}>{t('cancel')}</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Select Customer</Text>
+            <TouchableOpacity onPress={() => setShowCustomerModal(false)}>
+              <Text style={styles.saveButton}>Done</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            <TouchableOpacity
+              style={[styles.customerOption, !selectedCustomer && styles.selectedCustomer]}
+              onPress={() => selectCustomer(null)}
+            >
+              <Text style={[styles.customerOptionText, !selectedCustomer && styles.selectedCustomerText]}>
+                No Customer (Cash Sale)
+              </Text>
+            </TouchableOpacity>
+
+            {customers.map(customer => (
+              <TouchableOpacity
+                key={customer.id}
+                style={[styles.customerOption, selectedCustomer === customer.id && styles.selectedCustomer]}
+                onPress={() => selectCustomer(customer.id)}
+              >
+                <View>
+                  <Text style={[styles.customerOptionText, selectedCustomer === customer.id && styles.selectedCustomerText]}>
+                    {customer.name}
+                  </Text>
+                  <Text style={styles.customerOptionDetails}>
+                    Phone: {customer.phone} | Balance: {formatCurrency(customer.loanBalance)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Loan Pricing Modal */}
+      <Modal visible={showLoanModal} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowLoanModal(false)}>
+              <Text style={styles.cancelButton}>{t('cancel')}</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Apply Loan Discount</Text>
+            <TouchableOpacity onPress={confirmLoanPricing}>
+              <Text style={styles.saveButton}>Apply</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            {currentLoanItem && (
+              <View>
+                <Text style={styles.loanProductName}>
+                  {products.find(p => p.id === currentLoanItem.productId)?.name}
+                </Text>
+                <Text style={styles.loanProductPrice}>
+                  Original Price: {formatCurrency(products.find(p => p.id === currentLoanItem.productId)?.sellingPrice || 0)}
+                </Text>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Discount Percentage (%)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={loanDiscount.toString()}
+                    onChangeText={(text) => setLoanDiscount(Number(text) || 0)}
+                    placeholder="Enter discount % (e.g., 10)"
+                    keyboardType="numeric"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+
+                {loanDiscount > 0 && loanDiscount <= 100 && (
+                  <View style={styles.loanCalculation}>
+                    <Text style={styles.loanCalculationText}>
+                      Discounted Price: {formatCurrency(
+                        (products.find(p => p.id === currentLoanItem.productId)?.sellingPrice || 0) *
+                        (1 - loanDiscount / 100)
+                      )}
+                    </Text>
+                    <Text style={styles.loanCalculationText}>
+                      Loan Amount: {formatCurrency(
+                        (products.find(p => p.id === currentLoanItem.productId)?.sellingPrice || 0) *
+                        (loanDiscount / 100) * currentLoanItem.quantity
+                      )}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-const { width, height } = Dimensions.get('window');
-
-const styles = StyleSheet.create({
+const createStyles = (width: number) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
@@ -336,6 +558,40 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#111827',
     textAlign: 'center',
+  },
+  customerSection: {
+    margin: width * 0.03,
+    marginTop: 0,
+  },
+  customerButton: {
+    backgroundColor: '#2563EB',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: width * 0.03,
+    paddingVertical: width * 0.02,
+    borderRadius: width * 0.025,
+    gap: width * 0.02,
+  },
+  customerButtonText: {
+    color: '#FFFFFF',
+    fontSize: width * 0.04,
+    fontWeight: '600',
+  },
+  customerInfo: {
+    marginTop: width * 0.02,
+    padding: width * 0.03,
+    backgroundColor: '#F3F4F6',
+    borderRadius: width * 0.025,
+  },
+  customerName: {
+    fontSize: width * 0.04,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  customerBalance: {
+    fontSize: width * 0.035,
+    color: '#6B7280',
+    marginTop: width * 0.01,
   },
   searchInput: {
     margin: width * 0.03,
@@ -452,10 +708,37 @@ const styles = StyleSheet.create({
   cartItem: {
     marginBottom: width * 0.02,
   },
+  cartItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: width * 0.01,
+  },
   cartItemName: {
     fontSize: width * 0.035,
     fontWeight: '600',
     color: '#111827',
+    flex: 1,
+  },
+  loanButton: {
+    backgroundColor: '#7C3AED',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: width * 0.02,
+    paddingVertical: width * 0.01,
+    borderRadius: width * 0.015,
+    gap: width * 0.01,
+  },
+  loanButtonText: {
+    color: '#FFFFFF',
+    fontSize: width * 0.03,
+    fontWeight: '600',
+  },
+  loanDiscountText: {
+    fontSize: width * 0.03,
+    color: '#7C3AED',
+    fontStyle: 'italic',
+    marginTop: width * 0.005,
   },
   cartItemDetails: {
     fontSize: width * 0.03,
@@ -625,5 +908,48 @@ const styles = StyleSheet.create({
   tableCell: {
     fontSize: width * 0.035,
     color: '#111827',
+  },
+  customerOption: {
+    padding: width * 0.04,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  selectedCustomer: {
+    backgroundColor: '#EBF4FF',
+  },
+  customerOptionText: {
+    fontSize: width * 0.04,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  selectedCustomerText: {
+    color: '#2563EB',
+  },
+  customerOptionDetails: {
+    fontSize: width * 0.035,
+    color: '#6B7280',
+    marginTop: width * 0.01,
+  },
+  loanProductName: {
+    fontSize: width * 0.045,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: width * 0.02,
+  },
+  loanProductPrice: {
+    fontSize: width * 0.04,
+    color: '#6B7280',
+    marginBottom: width * 0.03,
+  },
+  loanCalculation: {
+    backgroundColor: '#F3F4F6',
+    padding: width * 0.03,
+    borderRadius: width * 0.025,
+    marginTop: width * 0.03,
+  },
+  loanCalculationText: {
+    fontSize: width * 0.04,
+    color: '#111827',
+    marginBottom: width * 0.01,
   },
 });

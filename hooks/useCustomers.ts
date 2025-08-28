@@ -39,7 +39,12 @@ export function useCustomers() {
           table: 'customers',
         },
         (payload) => {
-          setCustomers((prev) => [...prev, payload.new as Customer]);
+          const newCustomer = {
+            ...payload.new,
+            loyaltyPoints: payload.new.loyalty_points || 0,
+            loanBalance: payload.new.loan_balance || 0,
+          };
+          setCustomers((prev) => [...prev, newCustomer as Customer]);
         }
       )
       .on(
@@ -50,9 +55,14 @@ export function useCustomers() {
           table: 'customers',
         },
         (payload) => {
+          const updatedCustomer = {
+            ...payload.new,
+            loyaltyPoints: payload.new.loyalty_points || 0,
+            loanBalance: payload.new.loan_balance || 0,
+          };
           setCustomers((prev) =>
             prev.map((customer) =>
-              customer.id === payload.new.id ? (payload.new as Customer) : customer
+              customer.id === payload.new.id ? (updatedCustomer as Customer) : customer
             )
           );
         }
@@ -86,7 +96,14 @@ export function useCustomers() {
       return;
     }
 
-    setCustomers(data || []);
+    // Map database fields to interface fields
+    const mappedCustomers = (data || []).map(customer => ({
+      ...customer,
+      loyaltyPoints: customer.loyalty_points || 0,
+      loanBalance: customer.loan_balance || 0,
+    }));
+
+    setCustomers(mappedCustomers);
   };
 
   const addCustomer = async (customerData: Omit<Customer, 'id' | 'loyaltyPoints' | 'loanBalance' | 'created_at'>) => {
@@ -110,7 +127,12 @@ export function useCustomers() {
       return null;
     }
 
-    return data;
+    // Map the returned data to match the interface
+    return {
+      ...data,
+      loyaltyPoints: data.loyalty_points || 0,
+      loanBalance: data.loan_balance || 0,
+    };
   };
 
   const updateCustomer = async (id: string, customerData: Partial<Omit<Customer, 'id' | 'created_at'>>) => {
@@ -133,7 +155,12 @@ export function useCustomers() {
       return null;
     }
 
-    return data;
+    // Map the returned data to match the interface
+    return {
+      ...data,
+      loyaltyPoints: data.loyalty_points || 0,
+      loanBalance: data.loan_balance || 0,
+    };
   };
 
   const deleteCustomer = async (id: string) => {
@@ -177,6 +204,13 @@ export function useCustomers() {
       return null;
     }
 
+    // Map the updated customer data
+    const mappedCustomer = {
+      ...updatedCustomer,
+      loyaltyPoints: updatedCustomer.loyalty_points || 0,
+      loanBalance: updatedCustomer.loan_balance || 0,
+    };
+
     // Add loan transaction record
     const { data: transaction, error: transactionError } = await supabase
       .from('customer_loan_history')
@@ -196,7 +230,7 @@ export function useCustomers() {
       return null;
     }
 
-    return { customer: updatedCustomer, transaction };
+    return { customer: mappedCustomer, transaction };
   };
 
   const payLoan = async (customerId: string, amount: number, description?: string) => {
@@ -226,6 +260,13 @@ export function useCustomers() {
       return null;
     }
 
+    // Map the updated customer data
+    const mappedCustomer = {
+      ...updatedCustomer,
+      loyaltyPoints: updatedCustomer.loyalty_points || 0,
+      loanBalance: updatedCustomer.loan_balance || 0,
+    };
+
     // Add payment transaction record
     const { data: transaction, error: transactionError } = await supabase
       .from('customer_loan_history')
@@ -245,7 +286,7 @@ export function useCustomers() {
       return null;
     }
 
-    return { customer: updatedCustomer, transaction };
+    return { customer: mappedCustomer, transaction };
   };
 
   const addLoyaltyPoints = async (customerId: string, points: number) => {
@@ -275,7 +316,12 @@ export function useCustomers() {
       return null;
     }
 
-    return updatedCustomer;
+    // Map the returned data to match the interface
+    return {
+      ...updatedCustomer,
+      loyaltyPoints: updatedCustomer.loyalty_points || 0,
+      loanBalance: updatedCustomer.loan_balance || 0,
+    };
   };
 
   const getCustomerById = (id: string) => {
@@ -294,7 +340,13 @@ export function useCustomers() {
       return [];
     }
 
-    return data || [];
+    // Map database fields to interface fields
+    const mappedHistory = (data || []).map(transaction => ({
+      ...transaction,
+      customerId: transaction.customer_id,
+    }));
+
+    return mappedHistory;
   };
 
   return {
