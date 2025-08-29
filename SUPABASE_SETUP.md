@@ -1,6 +1,6 @@
 # Supabase Setup Guide
 
-This guide will help you set up Supabase for your React Native Expo application.
+This guide will help you set up Supabase for your React Native Expo application with user authentication.
 
 ## 1. Create a Supabase Project
 
@@ -33,99 +33,85 @@ EXPO_PUBLIC_SUPABASE_URL=your_project_url_here
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 ```
 
-## 4. Create Database Tables
+## 4. Enable Authentication
 
 In your Supabase dashboard:
 
-1. Click on "Table Editor" in the left sidebar
-2. Click "New Table" and create the following tables:
+1. Click on "Authentication" in the left sidebar
+2. Go to "Settings" tab
+3. Configure your authentication settings:
+   - **Site URL**: Add your app's URL (e.g., `exp://localhost:8081` for development)
+   - **Redirect URLs**: Add your app's URL for OAuth redirects
+4. Go to "Providers" and enable the authentication providers you want (Email is enabled by default)
 
-### Customers Table
-```sql
--- Create customers table
-create table customers (
-  id uuid default gen_random_uuid() primary key,
-  name text not null,
-  phone text,
-  email text,
-  address text,
-  loyalty_points integer default 0,
-  loan_balance numeric default 0,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-```
+## 5. Create Database Tables
 
-### Customer Loan History Table
-```sql
--- Create customer_loan_history table
-create table customer_loan_history (
-  id uuid default gen_random_uuid() primary key,
-  customer_id uuid references customers(id) on delete cascade,
-  type text not null check (type in ('loan', 'payment')),
-  amount numeric not null,
-  description text,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-```
+In your Supabase dashboard:
 
-### Products Table
-```sql
--- Create products table
-create table products (
-  id uuid default gen_random_uuid() primary key,
-  name text not null,
-  brand text,
-  category text,
-  buying_price numeric not null,
-  selling_price numeric not null,
-  pieces integer not null,
-  low_stock_alert integer default 5,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-```
+1. Click on "SQL Editor" in the left sidebar
+2. Copy and paste the entire contents of `supabase-schema.sql` file
+3. Click "Run" to execute the schema
 
-### Sales Table
-```sql
--- Create sales table
-create table sales (
-  id uuid default gen_random_uuid() primary key,
-  total numeric not null,
-  cash_received numeric not null,
-  change numeric not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-```
+**Note**: The schema file includes:
+- All table definitions with proper user relationships
+- Row Level Security policies for data protection
+- Automatic user profile creation trigger
+- Complete authentication setup
 
-### Sale Items Table
-```sql
--- Create sale_items table
-create table sale_items (
-  id uuid default gen_random_uuid() primary key,
-  sale_id uuid references sales(id) on delete cascade,
-  product_id uuid references products(id) on delete set null,
-  quantity integer not null,
-  price numeric not null
-);
-```
+This will create all necessary tables with proper relationships and Row Level Security policies.
 
-## 5. Set up Row Level Security (RLS)
+### Tables Created:
 
-To enable RLS on all tables, run these commands in the SQL editor:
+- **user_profiles**: Stores additional user information (username, full name, phone)
+- **customers**: Customer information with user ownership
+- **customer_loan_history**: Loan transaction history
+- **products**: Product inventory with user ownership
+- **sales**: Sales transactions with user ownership
+- **sale_items**: Individual sale items
+- **losses**: Product loss tracking
 
-```sql
-alter table customers enable row level security;
-alter table customer_loan_history enable row level security;
-alter table products enable row level security;
-alter table sales enable row level security;
-alter table sale_items enable row level security;
-```
+All tables include:
+- `user_id` references to ensure data isolation between users
+- Row Level Security (RLS) policies for data protection
+- Automatic user profile creation on signup
 
-## 6. Run Your Application
+## 6. Verify Setup
 
-After setting up the database tables, you can run your application:
+After running the schema:
+
+1. Check that all tables were created successfully in the "Table Editor"
+2. Verify that RLS is enabled on all tables
+3. Test user registration and login in your app
+
+## 7. Data Security Features
+
+The schema includes:
+
+- **Row Level Security (RLS)**: Users can only access their own data
+- **User Isolation**: All business data is tied to the authenticated user
+- **Automatic Profile Creation**: User profiles are created automatically on signup
+- **Cascading Deletes**: Deleting a user automatically cleans up all their data
+
+## 8. Run Your Application
+
+After setting up the database and authentication, you can run your application:
 
 ```bash
 npm start
 ```
 
-Your app should now be connected to Supabase and using the remote database instead of mock data.
+Your app now includes:
+
+- **User Authentication**: Sign up and login functionality
+- **Personalized Experience**: Each user sees only their own data
+- **Secure Data Storage**: All business data is protected with Row Level Security
+- **Real-time Sync**: Changes are synchronized across devices
+
+## 9. Testing Authentication
+
+1. **Sign Up**: Create a new account with username, email, and password
+2. **Email Verification**: Check your email and verify your account
+3. **Login**: Sign in with your credentials
+4. **Data Isolation**: Add some products/customers and verify they're user-specific
+
+The authentication system is now fully integrated with your accessories app!

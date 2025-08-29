@@ -8,6 +8,7 @@ import { useCustomers } from '@/hooks/useCustomers';
 export default function CustomersScreen() {
   const { t } = useLanguage();
   const { customers, addCustomer, updateCustomer, deleteCustomer, addLoan, payLoan } = useCustomers();
+  const { width } = useWindowDimensions();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
@@ -108,6 +109,7 @@ export default function CustomersScreen() {
 
   const CustomerCard = ({ customer }: { customer: any }) => {
     const hasLoan = customer.loanBalance > 0;
+    const styles = createStyles(width);
 
     return (
       <View style={[styles.customerCard, hasLoan && styles.customerWithLoan]}>
@@ -184,6 +186,8 @@ export default function CustomersScreen() {
       </View>
     );
   };
+
+  const styles = createStyles(width);
 
   return (
     <View style={styles.container}>
@@ -373,9 +377,7 @@ export default function CustomersScreen() {
   );
 }
 
-const { width, height } = Dimensions.get('window');
-
-const styles = StyleSheet.create({
+const createStyles = (width: number) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',

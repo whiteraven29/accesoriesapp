@@ -1,12 +1,13 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3 } from 'lucide-react-native';
+import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3, LogOut } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/LanguageContext';
 import { formatCurrency } from '@/utils/currency';
 import { useProducts } from '@/hooks/useProducts';
 import { useCustomers } from '@/hooks/useCustomers';
 import { useSales } from '@/hooks/useSales';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -14,6 +15,7 @@ export default function HomeScreen() {
   const { products } = useProducts();
   const { customers } = useCustomers();
   const { sales, getTodaysSales, getTotalSales } = useSales();
+  const { user, signOut } = useAuth();
   const { width, height } = useWindowDimensions();
   
   // Calculate dashboard data from real data
@@ -80,12 +82,18 @@ export default function HomeScreen() {
         <View style={styles.headerTop}>
           <View>
             <Text style={styles.greeting}>
-              {isSwahili ? 'Habari za asubuhi!' : 'Good Morning!'}
+              {isSwahili ? 'Habari!' : 'Hello!'} {user?.user_metadata?.username || user?.email?.split('@')[0] || 'User'}
             </Text>
             <Text style={styles.businessName}>
               {isSwahili ? 'Duka la Simu' : 'Phone Shop POS'}
             </Text>
           </View>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={signOut}
+          >
+            <LogOut size={20} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
         <Text style={styles.date}>
           {new Date().toLocaleDateString(isSwahili ? 'sw-TZ' : 'en-TZ')}
@@ -197,6 +205,11 @@ const createStyles = (width: number) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+  },
+  logoutButton: {
+    padding: width * 0.02,
+    borderRadius: width * 0.02,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   greeting: {
     fontSize: width * 0.04,

@@ -133,48 +133,24 @@ export default function ReportsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Profit & Loss Summary */}
-        <Text style={styles.sectionTitle}>Profit & Loss Summary</Text>
+        {/* Loss Note */}
+        <Text style={styles.sectionTitle}>Financial Summary</Text>
         <View style={styles.profitLossCard}>
           <View style={styles.profitLossHeader}>
-            <Text style={styles.profitLossTitle}>Financial Overview</Text>
+            <Text style={styles.profitLossTitle}>Loss Information</Text>
             <Calendar size={20} color="#6B7280" />
           </View>
-          
-          <View style={styles.profitLossGrid}>
-            <View style={styles.profitLossItem}>
-              <Text style={styles.profitLossLabel}>Total Revenue</Text>
-              <Text style={[styles.profitLossValue, { color: '#16A34A' }]}>
-                {formatCurrency(profitLoss.revenue)}
-              </Text>
-            </View>
-            
-            <View style={styles.profitLossItem}>
-              <Text style={styles.profitLossLabel}>Total Cost</Text>
-              <Text style={[styles.profitLossValue, { color: '#DC2626' }]}>
-                {formatCurrency(profitLoss.cost)}
-              </Text>
-            </View>
-            
-            <View style={styles.profitLossItem}>
-              <Text style={styles.profitLossLabel}>Net Profit</Text>
-              <Text style={[
-                styles.profitLossValue, 
-                { color: profitLoss.profit >= 0 ? '#16A34A' : '#DC2626', fontSize: 20, fontWeight: 'bold' }
-              ]}>
-                {formatCurrency(profitLoss.profit)}
-              </Text>
-            </View>
-            
-            <View style={styles.profitLossItem}>
-              <Text style={styles.profitLossLabel}>Profit Margin</Text>
-              <Text style={[
-                styles.profitLossValue, 
-                { color: profitLoss.margin >= 0 ? '#16A34A' : '#DC2626' }
-              ]}>
-                {profitLoss.margin.toFixed(1)}%
-              </Text>
-            </View>
+
+          <View style={styles.lossNoteContainer}>
+            <Text style={styles.lossNote}>
+              {profitLoss.profit < 0
+                ? `Current loss: ${formatCurrency(Math.abs(profitLoss.profit))}`
+                : `Current profit: ${formatCurrency(profitLoss.profit)}`
+              }
+            </Text>
+            <Text style={styles.lossNoteDetail}>
+              Revenue: {formatCurrency(profitLoss.revenue)} | Cost: {formatCurrency(profitLoss.cost)}
+            </Text>
           </View>
         </View>
 
@@ -381,6 +357,22 @@ const createStyles = (width: number) => StyleSheet.create({
   profitLossValue: {
     fontSize: width * 0.04,
     fontWeight: 'bold',
+  },
+  lossNoteContainer: {
+    padding: width * 0.04,
+    alignItems: 'center',
+  },
+  lossNote: {
+    fontSize: width * 0.045,
+    fontWeight: 'bold',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: width * 0.02,
+  },
+  lossNoteDetail: {
+    fontSize: width * 0.035,
+    color: '#6B7280',
+    textAlign: 'center',
   },
   statsGrid: {
     flexDirection: 'row',

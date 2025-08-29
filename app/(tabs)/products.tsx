@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions } from 'react-native';
 import { Plus, Search, CreditCard as Edit, Trash2, Package } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/LanguageContext';
 import { formatCurrency } from '@/utils/currency';
@@ -19,6 +19,7 @@ interface Product {
 export default function ProductsScreen() {
   const { t, isSwahili } = useLanguage();
   const { products, addProduct, updateProduct, deleteProduct, fetchProducts } = useProducts();
+  const { width } = useWindowDimensions();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -104,6 +105,8 @@ export default function ProductsScreen() {
   };
 
   const ProductTable = () => {
+    const styles = createStyles(width);
+
     return (
       <View style={styles.tableContainer}>
         <View style={styles.tableHeader}>
@@ -141,6 +144,8 @@ export default function ProductsScreen() {
       </View>
     );
   };
+
+  const styles = createStyles(width);
 
   return (
     <View style={styles.container}>
@@ -329,9 +334,7 @@ export default function ProductsScreen() {
   );
 }
 
-const { width, height } = Dimensions.get('window');
-
-const styles = StyleSheet.create({
+const createStyles = (width: number) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
