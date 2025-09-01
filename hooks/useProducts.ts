@@ -102,10 +102,14 @@ export function useProducts() {
   };
 
   const addProduct = async (productData: Omit<Product, 'id' | 'created_at'>) => {
+    const { data: user } = await supabase.auth.getUser();
+    if (!user.user) return null;
+
     const { data, error } = await supabase
       .from('products')
       .insert([
         {
+          user_id: user.user.id,
           name: productData.name,
           brand: productData.brand,
           category: productData.category,

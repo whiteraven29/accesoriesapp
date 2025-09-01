@@ -95,10 +95,14 @@ export function useLosses() {
   };
 
   const addLoss = async (lossData: Omit<Loss, 'id' | 'created_at' | 'product'>) => {
+    const { data: user } = await supabase.auth.getUser();
+    if (!user.user) return null;
+
     const { data, error } = await supabase
       .from('losses')
       .insert([
         {
+          user_id: user.user.id,
           product_id: lossData.productId,
           quantity: lossData.quantity,
           reason: lossData.reason,

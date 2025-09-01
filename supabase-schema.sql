@@ -3,6 +3,7 @@ create table user_profiles (
   id uuid references auth.users(id) on delete cascade primary key,
   username text unique,
   full_name text,
+  email text not null,
   phone text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -92,6 +93,9 @@ alter table losses enable row level security;
 create policy "Users can view their own profile" on user_profiles
   for select using (auth.uid() = id);
 
+create policy "Allow login with username" on user_profiles
+  for select using (auth.uid() is null);
+
 create policy "Users can update their own profile" on user_profiles
   for update using (auth.uid() = id);
 
@@ -180,8 +184,8 @@ create policy "Users can delete their own losses" on losses
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.user_profiles (id, username, full_name)
-  values (new.id, new.raw_user_meta_data->>'username', new.raw_user_meta_data->>'full_name');
+  insert into public.user_profiles (id, username, full_name, email)
+  values (new.id, new.raw_user_meta_data->>'username', new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'email');
   return new;
 end;
 $$ language plpgsql security definer set search_path = public;

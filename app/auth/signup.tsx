@@ -1,22 +1,27 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/utils/supabase';
 import { useLanguage } from '@/hooks/LanguageContext';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function SignupScreen() {
   const { t } = useLanguage();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const [username, setUsername] = useState('');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSignup = async () => {
     if (!username || !email || !password || !confirmPassword) {
-      Alert.alert(t('error'), 'Please fill in all fields');
+      Alert.alert(t('error'), 'Please fill in all required fields');
       return;
     }
 
@@ -32,24 +37,52 @@ export default function SignupScreen() {
 
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
+      // Sign up the user with Supabase Auth
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             username: username,
+            full_name: fullName,
           }
         }
       });
 
-      if (error) {
-        Alert.alert(t('error'), error.message);
-      } else {
-        Alert.alert('Success', 'Account created successfully! Please check your email to verify your account.');
+      if (signUpError) {
+        Alert.alert(t('error'), signUpError.message);
+        return;
+      }
+
+      if (authData.user) {
+        // Use upsert instead of insert to handle potential duplicates
+        const { error: profileError } = await supabase
+          .from('user_profiles')
+          .upsert({
+            id: authData.user.id,
+            username: username,
+            full_name: fullName,
+            email: email,
+            phone: phone || null,
+          }, {
+            onConflict: 'id' // Specify the conflict target
+          });
+
+        if (profileError) {
+          console.warn('Profile warning:', profileError.message);
+          // Don't fail the signup if there's a profile issue
+          // The trigger should have already created the profile
+        }
+
+        Alert.alert(
+          'Success', 
+          'Account created successfully! Please check your email to verify your account.'
+        );
         router.replace('/auth/login');
       }
     } catch (error) {
       Alert.alert(t('error'), 'An unexpected error occurred');
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -67,7 +100,7 @@ export default function SignupScreen() {
 
         <View style={styles.form}>
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Username</Text>
+            <Text style={styles.inputLabel}>Username *</Text>
             <TextInput
               style={styles.textInput}
               value={username}
@@ -79,7 +112,19 @@ export default function SignupScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Email</Text>
+            <Text style={styles.inputLabel}>Full Name</Text>
+            <TextInput
+              style={styles.textInput}
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="Enter your full name"
+              autoCapitalize="words"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Email *</Text>
             <TextInput
               style={styles.textInput}
               value={email}
@@ -92,27 +137,63 @@ export default function SignupScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Password</Text>
+            <Text style={styles.inputLabel}>Phone</Text>
             <TextInput
               style={styles.textInput}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Enter your password"
-              secureTextEntry
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="Enter your phone number"
+              keyboardType="phone-pad"
               placeholderTextColor="#9CA3AF"
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Confirm Password</Text>
-            <TextInput
-              style={styles.textInput}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Confirm your password"
-              secureTextEntry
-              placeholderTextColor="#9CA3AF"
-            />
+            <Text style={styles.inputLabel}>Password *</Text>
+            <View style={styles.passwordContainer}>
+              <TextInput
+                style={styles.passwordInput}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Enter your password"
+                secureTextEntry={!showPassword}
+                placeholderTextColor="#9CA3AF"
+              />
+              <TouchableOpacity
+                style={styles.eyeIcon}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off' : 'eye'}
+                  size={20}
+                  color="#6B7280"
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Confirm Password *</Text>
+            <View style={styles.passwordContainer}>
+              <TextInput
+                style={styles.passwordInput}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Confirm your password"
+                secureTextEntry={!showConfirmPassword}
+                placeholderTextColor="#9CA3AF"
+              />
+              <TouchableOpacity
+                style={styles.eyeIcon}
+                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+              >
+                <Ionicons
+                  name={showConfirmPassword ? 'eye-off' : 'eye'}
+                  size={20}
+                  color="#6B7280"
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <TouchableOpacity
@@ -120,9 +201,11 @@ export default function SignupScreen() {
             onPress={handleSignup}
             disabled={loading}
           >
-            <Text style={styles.buttonText}>
-              {loading ? 'Creating Account...' : 'Sign Up'}
-            </Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Sign Up</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -148,6 +231,7 @@ const createStyles = (width: number) => StyleSheet.create({
     flex: 1,
     padding: width * 0.05,
     justifyContent: 'center',
+    paddingTop: width * 0.1,
   },
   header: {
     alignItems: 'center',
@@ -184,12 +268,31 @@ const createStyles = (width: number) => StyleSheet.create({
     color: '#111827',
     backgroundColor: '#FFFFFF',
   },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: width * 0.025,
+    backgroundColor: '#FFFFFF',
+  },
+  passwordInput: {
+    flex: 1,
+    padding: width * 0.04,
+    fontSize: width * 0.04,
+    color: '#111827',
+  },
+  eyeIcon: {
+    padding: width * 0.03,
+  },
   button: {
     backgroundColor: '#2563EB',
     paddingVertical: width * 0.04,
     borderRadius: width * 0.025,
     alignItems: 'center',
     marginTop: width * 0.05,
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   buttonDisabled: {
     backgroundColor: '#9CA3AF',

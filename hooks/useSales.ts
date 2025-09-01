@@ -134,11 +134,15 @@ export function useSales() {
   };
 
   const addSale = async (saleData: Omit<Sale, 'id' | 'created_at' | 'items'>, items: Omit<SaleItem, 'id' | 'saleId' | 'created_at'>[]) => {
+    const { data: user } = await supabase.auth.getUser();
+    if (!user.user) return null;
+
     // First, insert the sale
     const { data: sale, error: saleError } = await supabase
       .from('sales')
       .insert([
         {
+          user_id: user.user.id,
           total: saleData.total,
           cash_received: saleData.cashReceived,
           change: saleData.change,
@@ -154,6 +158,7 @@ export function useSales() {
 
     // Then, insert the sale items
     const saleItemsData = items.map(item => ({
+      user_id: user.user.id,
       sale_id: sale.id,
       product_id: item.productId,
       quantity: item.quantity,

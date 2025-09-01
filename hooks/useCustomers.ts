@@ -107,10 +107,14 @@ export function useCustomers() {
   };
 
   const addCustomer = async (customerData: Omit<Customer, 'id' | 'loyaltyPoints' | 'loanBalance' | 'created_at'>) => {
+    const { data: user } = await supabase.auth.getUser();
+    if (!user.user) return null;
+
     const { data, error } = await supabase
       .from('customers')
       .insert([
         {
+          user_id: user.user.id,
           name: customerData.name,
           phone: customerData.phone,
           email: customerData.email,
@@ -212,10 +216,14 @@ export function useCustomers() {
     };
 
     // Add loan transaction record
+    const { data: user } = await supabase.auth.getUser();
+    if (!user.user) return null;
+
     const { data: transaction, error: transactionError } = await supabase
       .from('customer_loan_history')
       .insert([
         {
+          user_id: user.user.id,
           customer_id: customerId,
           type: 'loan',
           amount: amount,
@@ -268,10 +276,14 @@ export function useCustomers() {
     };
 
     // Add payment transaction record
+    const { data: user } = await supabase.auth.getUser();
+    if (!user.user) return null;
+
     const { data: transaction, error: transactionError } = await supabase
       .from('customer_loan_history')
       .insert([
         {
+          user_id: user.user.id,
           customer_id: customerId,
           type: 'payment',
           amount: amount,

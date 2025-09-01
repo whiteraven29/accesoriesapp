@@ -3,20 +3,17 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, useWindowDi
 import { useRouter } from 'expo-router';
 import { supabase } from '@/utils/supabase';
 import { useLanguage } from '@/hooks/LanguageContext';
-import { Ionicons } from '@expo/vector-icons';
 
-export default function LoginScreen() {
+export default function ForgotPasswordScreen() {
   const { t } = useLanguage();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
-  const handleLogin = async () => {
-    if (!username || !password) {
-      Alert.alert(t('error'), 'Please fill in all fields');
+  const handleResetPassword = async () => {
+    if (!username) {
+      Alert.alert(t('error'), 'Please enter your username');
       return;
     }
 
@@ -30,20 +27,20 @@ export default function LoginScreen() {
         .single();
 
       if (profileError || !profile) {
-        Alert.alert(t('error'), 'Invalid username or password');
+        Alert.alert(t('error'), 'Username not found');
         setLoading(false);
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email: profile.email,
-        password,
+      const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
+        redirectTo: 'your-app-scheme://reset-password',
       });
 
       if (error) {
         Alert.alert(t('error'), error.message);
       } else {
-        router.replace('/(tabs)');
+        Alert.alert('Success', 'Password reset email sent! Please check your email.');
+        router.replace('/auth/login');
       }
     } catch (error) {
       Alert.alert(t('error'), 'An unexpected error occurred');
@@ -57,8 +54,8 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Sign in to your account</Text>
+        <Text style={styles.title}>Reset Password</Text>
+        <Text style={styles.subtitle}>Enter your username to reset your password</Text>
       </View>
 
       <View style={styles.form}>
@@ -74,55 +71,22 @@ export default function LoginScreen() {
           />
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Password</Text>
-          <View style={styles.passwordContainer}>
-            <TextInput
-              style={styles.passwordInput}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Enter your password"
-              secureTextEntry={!showPassword}
-              placeholderTextColor="#9CA3AF"
-            />
-            <TouchableOpacity
-              style={styles.eyeIcon}
-              onPress={() => setShowPassword(!showPassword)}
-            >
-              <Ionicons
-                name={showPassword ? 'eye-off' : 'eye'}
-                size={20}
-                color="#6B7280"
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
+          onPress={handleResetPassword}
           disabled={loading}
         >
           <Text style={styles.buttonText}>
-            {loading ? 'Signing In...' : 'Sign In'}
+            {loading ? 'Sending...' : 'Send Reset Email'}
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.linkButton}
-          onPress={() => router.replace('/auth/forgot-password')}
+          onPress={() => router.replace('/auth/login')}
         >
           <Text style={styles.linkText}>
-            Forgot Password? <Text style={styles.linkTextBold}>Reset</Text>
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.linkButton}
-          onPress={() => router.replace('/auth/signup')}
-        >
-          <Text style={styles.linkText}>
-            Don't have an account? <Text style={styles.linkTextBold}>Sign Up</Text>
+            Remember your password? <Text style={styles.linkTextBold}>Sign In</Text>
           </Text>
         </TouchableOpacity>
       </View>
@@ -150,6 +114,7 @@ const createStyles = (width: number) => StyleSheet.create({
   subtitle: {
     fontSize: width * 0.04,
     color: '#6B7280',
+    textAlign: 'center',
   },
   form: {
     width: '100%',
@@ -171,23 +136,6 @@ const createStyles = (width: number) => StyleSheet.create({
     fontSize: width * 0.04,
     color: '#111827',
     backgroundColor: '#FFFFFF',
-  },
-  passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: width * 0.025,
-    backgroundColor: '#FFFFFF',
-  },
-  passwordInput: {
-    flex: 1,
-    padding: width * 0.04,
-    fontSize: width * 0.04,
-    color: '#111827',
-  },
-  eyeIcon: {
-    padding: width * 0.03,
   },
   button: {
     backgroundColor: '#2563EB',
