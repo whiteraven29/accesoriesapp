@@ -109,7 +109,7 @@ export default function ReportsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Reports & Analytics</Text>
+        <Text style={styles.title}>{t('reports')}</Text>
       </View>
 
       <View style={styles.periodSelector}>
@@ -120,7 +120,7 @@ export default function ReportsScreen() {
             onPress={() => setSelectedPeriod(period as any)}
           >
             <Text style={[styles.periodText, selectedPeriod === period && styles.activePeriodText]}>
-              {period.charAt(0).toUpperCase() + period.slice(1)}
+              {t(period)}
             </Text>
           </TouchableOpacity>
         ))}
@@ -134,48 +134,48 @@ export default function ReportsScreen() {
         }
       >
         {/* Loss Note */}
-        <Text style={styles.sectionTitle}>Financial Summary</Text>
+        <Text style={styles.sectionTitle}>{t('financialSummary')}</Text>
         <View style={styles.profitLossCard}>
           <View style={styles.profitLossHeader}>
-            <Text style={styles.profitLossTitle}>Loss Information</Text>
+            <Text style={styles.profitLossTitle}>{t('lossInformation')}</Text>
             <Calendar size={20} color="#6B7280" />
           </View>
 
           <View style={styles.lossNoteContainer}>
             <Text style={styles.lossNote}>
               {profitLoss.profit < 0
-                ? `Current loss: ${formatCurrency(Math.abs(profitLoss.profit))}`
-                : `Current profit: ${formatCurrency(profitLoss.profit)}`
+                ? `${t('currentLoss')}: ${formatCurrency(Math.abs(profitLoss.profit))}`
+                : `${t('currentProfit')}: ${formatCurrency(profitLoss.profit)}`
               }
             </Text>
             <Text style={styles.lossNoteDetail}>
-              Revenue: {formatCurrency(profitLoss.revenue)} | Cost: {formatCurrency(profitLoss.cost)}
+              {t('revenue')}: {formatCurrency(profitLoss.revenue)} | {t('cost')}: {formatCurrency(profitLoss.cost)}
             </Text>
           </View>
         </View>
 
         {/* Key Metrics */}
-        <Text style={styles.sectionTitle}>Key Metrics</Text>
+        <Text style={styles.sectionTitle}>{t('keyMetrics')}</Text>
         <View style={styles.statsGrid}>
           <StatCard
-            title="Total Sales"
+            title={t('totalSales')}
             value={formatCurrency(profitLoss.revenue)}
             icon={<DollarSign size={24} color="#2563EB" />}
             trend="up"
             trendValue={8.5}
           />
           <StatCard
-            title="Inventory Value"
+            title={t('inventoryValue')}
             value={formatCurrency(inventory.sellingValue)}
             icon={<Package size={24} color="#7C3AED" />}
-            subtitle={`${inventory.totalItems} items`}
+            subtitle={`${inventory.totalItems} ${t('items')}`}
             color="#7C3AED"
           />
         </View>
 
         <View style={styles.statsGrid}>
           <StatCard
-            title="Active Customers"
+            title={t('activeCustomers')}
             value={customers.length.toString()}
             icon={<Users size={24} color="#16A34A" />}
             trend="up"
@@ -183,7 +183,7 @@ export default function ReportsScreen() {
             color="#16A34A"
           />
           <StatCard
-            title="Pending Loans"
+            title={t('pendingLoansReport')}
             value={formatCurrency(customers.reduce((total, c) => total + c.loanBalance, 0))}
             icon={<TrendingDown size={24} color="#D97706" />}
             color="#D97706"
@@ -193,7 +193,7 @@ export default function ReportsScreen() {
         {/* Low Stock Alert */}
         {lowStockItems.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>Low Stock Alert ({lowStockItems.length} items)</Text>
+            <Text style={styles.sectionTitle}>{t('lowStockAlertReport')} ({lowStockItems.length} {t('items')})</Text>
             <View style={styles.lowStockCard}>
               {lowStockItems.map(product => (
                 <View key={product.id} style={styles.lowStockItem}>
@@ -203,7 +203,7 @@ export default function ReportsScreen() {
                   </View>
                   <View style={styles.lowStockQty}>
                     <Text style={styles.lowStockNumber}>{product.pieces}</Text>
-                    <Text style={styles.lowStockLabel}>remaining</Text>
+                    <Text style={styles.lowStockLabel}>{t('remaining')}</Text>
                   </View>
                 </View>
               ))}
@@ -212,7 +212,7 @@ export default function ReportsScreen() {
         )}
 
         {/* Top Products */}
-        <Text style={styles.sectionTitle}>Product Performance</Text>
+        <Text style={styles.sectionTitle}>{t('productPerformance')}</Text>
         <View style={styles.topProductsCard}>
           {topProducts.map((product, index) => (
             <View key={product.id} style={styles.topProductItem}>
@@ -225,33 +225,33 @@ export default function ReportsScreen() {
               </View>
               <View style={styles.productStats}>
                 <Text style={styles.productValue}>{formatCurrency(product.sellingPrice * product.pieces)}</Text>
-                <Text style={styles.productQty}>{product.pieces} units</Text>
+                <Text style={styles.productQty}>{product.pieces} {t('units')}</Text>
               </View>
             </View>
           ))}
         </View>
 
         {/* Customer Insights */}
-        <Text style={styles.sectionTitle}>Customer Insights</Text>
+        <Text style={styles.sectionTitle}>{t('customerInsights')}</Text>
         <View style={styles.customerInsights}>
           <View style={styles.insightItem}>
-            <Text style={styles.insightLabel}>Total Loyalty Points</Text>
+            <Text style={styles.insightLabel}>{t('totalLoyaltyPoints')}</Text>
             <Text style={styles.insightValue}>
               {customers.reduce((total, c) => total + c.loyaltyPoints, 0)}
             </Text>
           </View>
           <View style={styles.insightItem}>
-            <Text style={styles.insightLabel}>Customers with Loans</Text>
+            <Text style={styles.insightLabel}>{t('customersWithLoans')}</Text>
             <Text style={styles.insightValue}>
               {customers.filter(c => c.loanBalance > 0).length}
             </Text>
           </View>
           <View style={styles.insightItem}>
-            <Text style={styles.insightLabel}>Average Loan</Text>
+            <Text style={styles.insightLabel}>{t('averageLoan')}</Text>
             <Text style={styles.insightValue}>
               {formatCurrency(
                 customers.filter(c => c.loanBalance > 0).length > 0
-                  ? customers.reduce((total, c) => total + c.loanBalance, 0) / 
+                  ? customers.reduce((total, c) => total + c.loanBalance, 0) /
                     customers.filter(c => c.loanBalance > 0).length
                   : 0
               )}

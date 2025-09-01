@@ -45,6 +45,35 @@ export function useSales() {
           });
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sales',
+        },
+        (payload) => {
+          // Fetch the updated sale with items
+          fetchSaleWithItems(payload.new.id).then(sale => {
+            if (sale) {
+              setSales((prev) =>
+                prev.map((s) => (s.id === payload.new.id ? sale : s))
+              );
+            }
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'sales',
+        },
+        (payload) => {
+          setSales((prev) => prev.filter((sale) => sale.id !== payload.old.id));
+        }
+      )
       .subscribe();
 
     return () => {
