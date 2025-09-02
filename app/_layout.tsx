@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useFrameworkReady } from '@/hooks/useFrameworkReady';
-import { LanguageProvider } from '@/hooks/LanguageContext';
-import { AuthProvider } from '@/hooks/useAuth';
-import { AuthWrapper } from '@/components/AuthWrapper';
+import { useFrameworkReady } from '../hooks/useFrameworkReady';
+import { LanguageProvider } from '../hooks/LanguageContext';
+import { AuthProvider } from '../hooks/useAuth';
+import { AuthWrapper } from '../components/AuthWrapper';
 
 export default function RootLayout() {
   useFrameworkReady();

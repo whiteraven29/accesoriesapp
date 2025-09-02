@@ -1,0 +1,32 @@
+{
+  "cli": {
+    "version": ">= 16.18.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "development"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "production",
+        "ANDROID_HOME": "/home/expo/Android/Sdk"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "NODE_ENV": "production",
+        "ANDROID_HOME": "/home/expo/Android/Sdk"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

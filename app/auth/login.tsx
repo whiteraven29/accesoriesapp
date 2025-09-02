@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { supabase } from '@/utils/supabase';
-import { useLanguage } from '@/hooks/LanguageContext';
+import { supabase } from '../../utils/supabase';
+import { useLanguage } from '../../hooks/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function LoginScreen() {

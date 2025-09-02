@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter, useSegments } from 'expo-router';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '../hooks/useAuth';
 
 export function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();

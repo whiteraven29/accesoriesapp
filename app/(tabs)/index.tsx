@@ -2,12 +2,12 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensio
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3, LogOut } from 'lucide-react-native';
-import { useLanguage } from '@/hooks/LanguageContext';
-import { formatCurrency } from '@/utils/currency';
-import { useProducts } from '@/hooks/useProducts';
-import { useCustomers } from '@/hooks/useCustomers';
-import { useSales } from '@/hooks/useSales';
-import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '../../hooks/LanguageContext';
+import { formatCurrency } from '../../utils/currency';
+import { useProducts } from '../../hooks/useProducts';
+import { useCustomers } from '../../hooks/useCustomers';
+import { useSales } from '../../hooks/useSales';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function HomeScreen() {
   const router = useRouter();

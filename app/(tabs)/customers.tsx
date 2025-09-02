@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, useWindowDimensions } from 'react-native';
 import { Users, Plus, Search, CreditCard as Edit, Trash2, CreditCard, DollarSign, User } from 'lucide-react-native';
-import { useLanguage } from '@/hooks/LanguageContext';
-import { formatCurrency } from '@/utils/currency';
-import { useCustomers } from '@/hooks/useCustomers';
+import { useLanguage } from '../../hooks/LanguageContext';
+import { formatCurrency } from '../../utils/currency';
+import { useCustomers } from '../../hooks/useCustomers';
 
 export default function CustomersScreen() {
   const { t } = useLanguage();

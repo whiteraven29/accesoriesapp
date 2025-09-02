@@ -4,9 +4,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "EXPO_NO_TELEMETRY=1 expo start",
-    "build:web": "expo export --platform web",
-    "lint": "expo lint"
+    "dev": "NODE_ENV=development EXPO_NO_TELEMETRY=1 expo start",
+    "build:web": "NODE_ENV=production expo export --platform web",
+    "lint": "expo lint",
+    "build:android": "NODE_ENV=production eas build --platform android",
+    "build:ios": "NODE_ENV=production eas build --platform ios"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
@@ -31,7 +33,7 @@
     "lucide-react-native": "^0.475.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "react-native": "0.79.1",
+    "react-native": "0.79.6",
     "react-native-gesture-handler": "~2.24.0",
     "react-native-reanimated": "~3.17.4",
     "react-native-safe-area-context": "5.3.0",

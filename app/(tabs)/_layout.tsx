@@ -1,7 +1,7 @@
 import { Tabs, useRouter } from 'expo-router';
 import { View, TouchableOpacity } from 'react-native';
 import { Chrome as Home, Package, ShoppingCart, Users, ChartBar as BarChart3, Languages } from 'lucide-react-native';
-import { useLanguage } from '@/hooks/LanguageContext';
+import { useLanguage } from '../../hooks/LanguageContext';
 
 export default function TabLayout() {
   const { toggleLanguage, t } = useLanguage();

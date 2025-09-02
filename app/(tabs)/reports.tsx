@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, useWindowDimensions } from 'react-native';
 import { ChartBar as BarChart3, Calendar, TrendingUp, TrendingDown, Package, Users, DollarSign, RefreshCw } from 'lucide-react-native';
-import { useLanguage } from '@/hooks/LanguageContext';
-import { formatCurrency } from '@/utils/currency';
-import { useProducts } from '@/hooks/useProducts';
-import { useCustomers } from '@/hooks/useCustomers';
-import { useSales } from '@/hooks/useSales';
+import { useLanguage } from '../../hooks/LanguageContext';
+import { formatCurrency } from '../../utils/currency';
+import { useProducts } from '../../hooks/useProducts';
+import { useCustomers } from '../../hooks/useCustomers';
+import { useSales } from '../../hooks/useSales';
 
 export default function ReportsScreen() {
   const { t } = useLanguage();

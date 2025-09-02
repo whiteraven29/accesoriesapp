@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions } from 'react-native';
 import { ShoppingCart, Plus, Minus, Trash2, Calculator, Users, CreditCard } from 'lucide-react-native';
-import { useLanguage } from '@/hooks/LanguageContext';
-import { formatCurrency } from '@/utils/currency';
-import { useProducts } from '@/hooks/useProducts';
-import { useSales } from '@/hooks/useSales';
-import { useCustomers } from '@/hooks/useCustomers';
+import { useLanguage } from '../../hooks/LanguageContext';
+import { formatCurrency } from '../../utils/currency';
+import { useProducts } from '../../hooks/useProducts';
+import { useSales } from '../../hooks/useSales';
+import { useCustomers } from '../../hooks/useCustomers';
 
 interface CartItem {
   productId: string;
