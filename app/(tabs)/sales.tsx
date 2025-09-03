@@ -1,11 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions } from 'react-native';
-import { ShoppingCart, Plus, Minus, Trash2, Calculator, Users, CreditCard, RefreshCw } from 'lucide-react-native';
+import { ShoppingCart, Plus, Minus, Trash2, Calculator, Users, CreditCard, RefreshCw, Download } from 'lucide-react-native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
-import { useSales } from '../../hooks/useSales';
+import { useSales, Sale } from '../../hooks/useSales';
 import { useCustomers } from '../../hooks/useCustomers';
+import { supabase } from '../../utils/supabase';
 
 interface CartItem {
   productId: string;
@@ -28,6 +32,11 @@ export default function SalesScreen() {
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [currentSale, setCurrentSale] = useState<Sale | null>(null);
+  const [receiptSignature, setReceiptSignature] = useState('');
+  const [receiptDescription, setReceiptDescription] = useState('');
+  const [userProfile, setUserProfile] = useState<{username: string, shop_name: string} | null>(null);
   const [currentItem, setCurrentItem] = useState<CartItem | null>(null);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const { width } = useWindowDimensions();
@@ -187,7 +196,7 @@ export default function SalesScreen() {
     });
 
     // Add sale record with correct pricing
-    addSale(
+    const result = await addSale(
       {
         total,
         cashReceived,
@@ -195,7 +204,7 @@ export default function SalesScreen() {
       },
       cart.map(item => {
         const product = products.find(p => p.id === item.productId);
-        if (!product) return { productId: item.productId, quantity: item.quantity, price: 0 };
+        if (!product) return { productId: item.productId, quantity: item.quantity, price: 0, buyingPrice: 0 };
 
         const basePrice = product.sellingPrice;
         const finalPrice = item.discount
@@ -210,13 +219,18 @@ export default function SalesScreen() {
       })
     );
 
+    // Show receipt
+    if (result) {
+      setCurrentSale(result);
+      await fetchUserProfile();
+      setShowReceiptModal(true);
+    }
+
     // Reset
     setCart([]);
     setCashReceived(0);
     setShowCheckout(false);
     setSelectedCustomer(null);
-
-    Alert.alert(t('success'), 'Sale completed successfully!');
   };
 
   const ProductTable = () => {
@@ -349,6 +363,231 @@ export default function SalesScreen() {
   };
 
   const selectedCustomerData = customers.find(c => c.id === selectedCustomer);
+
+  const fetchUserProfile = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile, error } = await supabase
+          .from('user_profiles')
+          .select('username, shop_name')
+          .eq('id', user.id)
+          .single();
+
+        if (!error && profile) {
+          setUserProfile(profile);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
+
+  const generateReceiptHTML = (sale: Sale, signature: string, description: string, userProfile: {username: string, shop_name: string} | null) => {
+    const date = new Date(sale.created_at).toLocaleDateString();
+    const time = new Date(sale.created_at).toLocaleTimeString();
+    const shopName = userProfile?.shop_name || 'AlexShop';
+    const username = userProfile?.username;
+
+    const itemsHTML = sale.items.map(item => {
+      const product = products.find(p => p.id === item.productId);
+      return `
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">${product?.name || 'Unknown Product'}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">TSh ${item.price.toLocaleString()}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">TSh ${(item.quantity * item.price).toLocaleString()}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const customerHTML = selectedCustomerData ? `
+      <div style="margin: 20px 0; padding: 15px; background-color: #f0f8ff; border-radius: 8px;">
+        <h3 style="margin: 0 0 10px 0; color: #2563eb;">Customer Information</h3>
+        <p style="margin: 5px 0;"><strong>Name:</strong> ${selectedCustomerData.name}</p>
+        <p style="margin: 5px 0;"><strong>Phone:</strong> ${selectedCustomerData.phone}</p>
+      </div>
+    ` : '';
+
+    const signatureHTML = signature ? `
+      <div style="margin: 20px 0;">
+        <h3 style="margin: 0 0 10px 0; color: #2563eb;">Signature</h3>
+        <div style="border: 1px solid #ddd; padding: 10px; border-radius: 4px; font-style: italic;">
+          ${signature}
+        </div>
+      </div>
+    ` : '';
+
+    const descriptionHTML = description ? `
+      <div style="margin: 20px 0;">
+        <h3 style="margin: 0 0 10px 0; color: #2563eb;">Notes</h3>
+        <div style="border: 1px solid #ddd; padding: 10px; border-radius: 4px; white-space: pre-wrap;">
+          ${description}
+        </div>
+      </div>
+    ` : '';
+
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>AlexShop Receipt</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              max-width: 400px;
+              margin: 0 auto;
+              padding: 20px;
+              background-color: #f9f9f9;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+              padding: 20px;
+              background-color: white;
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .header h1 {
+              margin: 0;
+              color: #2563eb;
+              font-size: 24px;
+            }
+            .header p {
+              margin: 5px 0;
+              color: #666;
+            }
+            .content {
+              background-color: white;
+              border-radius: 8px;
+              padding: 20px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 20px 0;
+            }
+            th {
+              background-color: #f3f4f6;
+              padding: 10px;
+              text-align: left;
+              border-bottom: 2px solid #e5e7eb;
+            }
+            .summary {
+              margin: 20px 0;
+              padding: 15px;
+              background-color: #f3f4f6;
+              border-radius: 8px;
+            }
+            .summary-row {
+              display: flex;
+              justify-content: space-between;
+              margin: 5px 0;
+            }
+            .total {
+              font-weight: bold;
+              font-size: 18px;
+              color: #16a34a;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 30px;
+              padding: 20px;
+              background-color: white;
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .footer p {
+              margin: 5px 0;
+              color: #666;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>${shopName}</h1>
+            <p>Receipt #${sale.id.slice(-8).toUpperCase()}</p>
+            <p>${date} ${time}</p>
+          </div>
+
+          <div class="content">
+            <h2 style="margin-top: 0; color: #2563eb;">Items Purchased</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th style="text-align: center;">Qty</th>
+                  <th style="text-align: right;">Price</th>
+                  <th style="text-align: right;">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsHTML}
+              </tbody>
+            </table>
+
+            <div class="summary">
+              <div class="summary-row">
+                <span>Total:</span>
+                <span class="total">TSh ${sale.total.toLocaleString()}</span>
+              </div>
+              <div class="summary-row">
+                <span>Cash Received:</span>
+                <span>TSh ${sale.cashReceived.toLocaleString()}</span>
+              </div>
+              <div class="summary-row">
+                <span>Change:</span>
+                <span>TSh ${sale.change.toLocaleString()}</span>
+              </div>
+            </div>
+
+            ${customerHTML}
+            ${signatureHTML}
+            ${descriptionHTML}
+          </div>
+
+          <div class="footer">
+            <p>Thank you for your business${username ? `, ${username}` : ''}!</p>
+            <p>${shopName} - Your Trusted Partner</p>
+          </div>
+        </body>
+      </html>
+    `;
+  };
+
+  const downloadReceiptAsPDF = async () => {
+    if (!currentSale) return;
+
+    try {
+      const htmlContent = generateReceiptHTML(currentSale, receiptSignature, receiptDescription, userProfile);
+      const { uri } = await Print.printToFileAsync({
+        html: htmlContent,
+        base64: false,
+      });
+
+      const fileName = `receipt_${currentSale.id.slice(-8)}.pdf`;
+      const newUri = `${FileSystem.documentDirectory}${fileName}`;
+
+      await FileSystem.moveAsync({
+        from: uri,
+        to: newUri,
+      });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(newUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Download Receipt',
+        });
+      } else {
+        Alert.alert('Success', `Receipt saved as ${fileName}`);
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      Alert.alert('Error', 'Failed to generate PDF receipt');
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -565,6 +804,116 @@ export default function SalesScreen() {
                     </Text>
                   </View>
                 )}
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Receipt Modal */}
+      <Modal visible={showReceiptModal} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowReceiptModal(false)}>
+              <Text style={styles.cancelButton}>{t('cancel')}</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Sale Receipt</Text>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.downloadButton}
+                onPress={downloadReceiptAsPDF}
+              >
+                <Download size={16} color="#FFFFFF" />
+                <Text style={styles.downloadButtonText}>PDF</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => {
+                setShowReceiptModal(false);
+                setReceiptSignature('');
+                setReceiptDescription('');
+              }}>
+                <Text style={styles.saveButton}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            {currentSale && (
+              <View>
+                <View style={styles.receiptHeader}>
+                  <Text style={styles.receiptTitle}>{userProfile?.shop_name || 'AlexShop'} Receipt</Text>
+                  <Text style={styles.receiptDate}>
+                    {new Date(currentSale.created_at).toLocaleDateString()} {new Date(currentSale.created_at).toLocaleTimeString()}
+                  </Text>
+                </View>
+
+                <View style={styles.receiptItems}>
+                  <Text style={styles.sectionTitle}>Items Purchased</Text>
+                  {currentSale.items.map((item, index) => {
+                    const product = products.find(p => p.id === item.productId);
+                    return (
+                      <View key={index} style={styles.receiptItem}>
+                        <Text style={styles.receiptItemName}>
+                          {product?.name || 'Unknown Product'}
+                        </Text>
+                        <Text style={styles.receiptItemDetails}>
+                          {item.quantity} x {formatCurrency(item.price)} = {formatCurrency(item.quantity * item.price)}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.receiptSummary}>
+                  <View style={styles.receiptTotal}>
+                    <Text style={styles.receiptTotalLabel}>Total:</Text>
+                    <Text style={styles.receiptTotalAmount}>{formatCurrency(currentSale.total)}</Text>
+                  </View>
+                  <View style={styles.receiptPayment}>
+                    <Text style={styles.receiptPaymentLabel}>Cash Received:</Text>
+                    <Text style={styles.receiptPaymentAmount}>{formatCurrency(currentSale.cashReceived || 0)}</Text>
+                  </View>
+                  <View style={styles.receiptChange}>
+                    <Text style={styles.receiptChangeLabel}>Change:</Text>
+                    <Text style={styles.receiptChangeAmount}>{formatCurrency(currentSale.change || 0)}</Text>
+                  </View>
+                </View>
+
+                {selectedCustomerData && (
+                  <View style={styles.receiptCustomer}>
+                    <Text style={styles.sectionTitle}>Customer Information</Text>
+                    <Text style={styles.receiptCustomerName}>{selectedCustomerData.name}</Text>
+                    <Text style={styles.receiptCustomerPhone}>{selectedCustomerData.phone}</Text>
+                  </View>
+                )}
+
+                <View style={styles.receiptSignatureSection}>
+                  <Text style={styles.sectionTitle}>Signature</Text>
+                  <TextInput
+                    style={styles.signatureInput}
+                    value={receiptSignature}
+                    onChangeText={setReceiptSignature}
+                    placeholder="Enter signature/name"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+
+                <View style={styles.receiptDescriptionSection}>
+                  <Text style={styles.sectionTitle}>Description/Notes</Text>
+                  <TextInput
+                    style={styles.descriptionInput}
+                    value={receiptDescription}
+                    onChangeText={setReceiptDescription}
+                    placeholder="Add any notes or description"
+                    multiline
+                    numberOfLines={3}
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+
+                <View style={styles.receiptFooter}>
+                  <Text style={styles.receiptFooterText}>Thank you for your business{userProfile?.username ? `, ${userProfile.username}` : ''}!</Text>
+                  <Text style={styles.receiptFooterText}>{userProfile?.shop_name || 'AlexShop'} - Your Trusted Partner</Text>
+                </View>
               </View>
             )}
           </ScrollView>
@@ -1028,5 +1377,165 @@ const createStyles = (width: number) => StyleSheet.create({
     fontSize: width * 0.04,
     color: '#111827',
     marginBottom: width * 0.01,
+  },
+  receiptHeader: {
+    alignItems: 'center',
+    marginBottom: width * 0.05,
+    padding: width * 0.04,
+    backgroundColor: '#F3F4F6',
+    borderRadius: width * 0.03,
+  },
+  receiptTitle: {
+    fontSize: width * 0.06,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: width * 0.02,
+  },
+  receiptDate: {
+    fontSize: width * 0.035,
+    color: '#6B7280',
+  },
+  receiptItems: {
+    marginBottom: width * 0.05,
+  },
+  receiptItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: width * 0.02,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  receiptItemName: {
+    fontSize: width * 0.04,
+    fontWeight: '600',
+    color: '#111827',
+    flex: 1,
+  },
+  receiptItemDetails: {
+    fontSize: width * 0.035,
+    color: '#6B7280',
+  },
+  receiptSummary: {
+    marginBottom: width * 0.05,
+    padding: width * 0.04,
+    backgroundColor: '#F3F4F6',
+    borderRadius: width * 0.03,
+  },
+  receiptTotal: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: width * 0.02,
+  },
+  receiptTotalLabel: {
+    fontSize: width * 0.045,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  receiptTotalAmount: {
+    fontSize: width * 0.045,
+    fontWeight: 'bold',
+    color: '#16A34A',
+  },
+  receiptPayment: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: width * 0.02,
+  },
+  receiptPaymentLabel: {
+    fontSize: width * 0.035,
+    color: '#6B7280',
+  },
+  receiptPaymentAmount: {
+    fontSize: width * 0.035,
+    color: '#111827',
+  },
+  receiptChange: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  receiptChangeLabel: {
+    fontSize: width * 0.035,
+    color: '#6B7280',
+  },
+  receiptChangeAmount: {
+    fontSize: width * 0.035,
+    color: '#111827',
+  },
+  receiptCustomer: {
+    marginBottom: width * 0.05,
+    padding: width * 0.04,
+    backgroundColor: '#EBF4FF',
+    borderRadius: width * 0.03,
+  },
+  receiptCustomerName: {
+    fontSize: width * 0.04,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: width * 0.01,
+  },
+  receiptCustomerPhone: {
+    fontSize: width * 0.035,
+    color: '#6B7280',
+  },
+  receiptSignatureSection: {
+    marginBottom: width * 0.05,
+  },
+  signatureInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: width * 0.025,
+    padding: width * 0.03,
+    fontSize: width * 0.04,
+    color: '#111827',
+    backgroundColor: '#FFFFFF',
+  },
+  receiptDescriptionSection: {
+    marginBottom: width * 0.05,
+  },
+  descriptionInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: width * 0.025,
+    padding: width * 0.03,
+    fontSize: width * 0.04,
+    color: '#111827',
+    backgroundColor: '#FFFFFF',
+    minHeight: width * 0.2,
+    textAlignVertical: 'top',
+  },
+  receiptFooter: {
+    alignItems: 'center',
+    padding: width * 0.04,
+    backgroundColor: '#F3F4F6',
+    borderRadius: width * 0.03,
+  },
+  receiptFooterText: {
+    fontSize: width * 0.035,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: width * 0.01,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: width * 0.02,
+  },
+  downloadButton: {
+    backgroundColor: '#16A34A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: width * 0.03,
+    paddingVertical: width * 0.02,
+    borderRadius: width * 0.025,
+    gap: width * 0.01,
+  },
+  downloadButtonText: {
+    color: '#FFFFFF',
+    fontSize: width * 0.035,
+    fontWeight: '600',
   },
 });

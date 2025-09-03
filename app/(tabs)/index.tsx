@@ -1,5 +1,4 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
-import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3, LogOut, RefreshCw } from 'lucide-react-native';
@@ -9,6 +8,8 @@ import { useProducts } from '../../hooks/useProducts';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useSales } from '../../hooks/useSales';
 import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../utils/supabase';
+import { useState, useEffect } from 'react';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -19,7 +20,31 @@ export default function HomeScreen() {
   const { user, signOut } = useAuth();
   const { width, height } = useWindowDimensions();
   const [refreshing, setRefreshing] = useState(false);
-  
+  const [userProfile, setUserProfile] = useState<{username: string, shop_name: string} | null>(null);
+
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile, error } = await supabase
+            .from('user_profiles')
+            .select('username, shop_name')
+            .eq('id', user.id)
+            .single();
+
+          if (!error && profile) {
+            setUserProfile(profile);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+      }
+    };
+
+    fetchUserProfile();
+  }, []);
+
   // Calculate dashboard data from real data
   const dashboardData = {
     todaySales: getTodaysSales().reduce((total, sale) => total + sale.total, 0),
@@ -102,7 +127,7 @@ export default function HomeScreen() {
               {isSwahili ? 'Habari!' : 'Hello!'} {user?.user_metadata?.username || user?.email?.split('@')[0] || 'User'}
             </Text>
             <Text style={styles.businessName}>
-              {isSwahili ? 'Duka la Simu' : 'Phone Shop POS'}
+              {userProfile?.shop_name || (isSwahili ? 'Duka la Simu' : 'Phone Shop POS')}
             </Text>
           </View>
           <View style={styles.headerButtons}>

@@ -5,6 +5,7 @@ create table user_profiles (
   full_name text,
   email text not null,
   phone text,
+  shop_name text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -184,8 +185,8 @@ create policy "Users can delete their own losses" on losses
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.user_profiles (id, username, full_name, email)
-  values (new.id, new.raw_user_meta_data->>'username', new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'email');
+  insert into public.user_profiles (id, username, full_name, email, shop_name)
+  values (new.id, new.raw_user_meta_data->>'username', new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'email', new.raw_user_meta_data->>'shop_name');
   return new;
 end;
 $$ language plpgsql security definer set search_path = public;
@@ -194,3 +195,6 @@ $$ language plpgsql security definer set search_path = public;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- Note: We use a relation to get buying_price from products table
+-- No additional columns needed in sale_items table

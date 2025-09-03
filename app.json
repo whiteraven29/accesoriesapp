@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "AlexShop",
+    "name": "DukaSmart",
     "slug": "alex-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -33,11 +33,20 @@
     "experiments": {
       "typedRoutes": true
     },
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/5127bf51-96de-4409-92de-d0f0f4e88ed6"
+    },
     "extra": {
       "router": {},
       "eas": {
         "projectId": "5127bf51-96de-4409-92de-d0f0f4e88ed6"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }

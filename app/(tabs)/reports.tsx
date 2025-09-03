@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, useWindowDimensions } from 'react-native';
 import { ChartBar as BarChart3, Calendar, TrendingUp, TrendingDown, Package, Users, DollarSign, RefreshCw } from 'lucide-react-native';
 import { useLanguage } from '../../hooks/LanguageContext';
@@ -6,6 +6,7 @@ import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useSales } from '../../hooks/useSales';
+import { supabase } from '../../utils/supabase';
 
 export default function ReportsScreen() {
   const { t } = useLanguage();
@@ -14,6 +15,12 @@ export default function ReportsScreen() {
   const { sales, getTotalSales, fetchSales } = useSales();
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
   const [refreshing, setRefreshing] = useState(false);
+  const [profitLoss, setProfitLoss] = useState({
+    revenue: 0,
+    cost: 0,
+    profit: 0,
+    margin: 0,
+  });
   const { width } = useWindowDimensions();
 
   const onRefresh = async () => {
@@ -26,20 +33,45 @@ export default function ReportsScreen() {
     setRefreshing(false);
   };
 
-  const calculateProfitLoss = () => {
-    const totalRevenue = getTotalSales();
-    const totalCost = products.reduce((total, product) => 
-      total + (product.buyingPrice * (product.pieces || 0)), 0
-    );
-    const profit = totalRevenue - totalCost;
-    
-    return {
-      revenue: totalRevenue,
-      cost: totalCost,
-      profit,
-      margin: totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0,
+  useEffect(() => {
+    const calculateProfitLoss = async () => {
+      const totalRevenue = getTotalSales();
+
+      // Calculate actual cost of goods sold by joining sale_items with products
+      const { data: saleItemsWithProducts, error } = await supabase
+        .from('sale_items')
+        .select(`
+          quantity,
+          products!inner(buying_price)
+        `);
+
+      if (error) {
+        console.error('Error fetching sale items with products:', error);
+        setProfitLoss({
+          revenue: totalRevenue,
+          cost: 0,
+          profit: totalRevenue,
+          margin: 100,
+        });
+        return;
+      }
+
+      const totalCost = (saleItemsWithProducts || []).reduce((total: number, item: any) =>
+        total + (item.products.buying_price * item.quantity), 0
+      );
+
+      const profit = totalRevenue - totalCost;
+
+      setProfitLoss({
+        revenue: totalRevenue,
+        cost: totalCost,
+        profit,
+        margin: totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0,
+      });
     };
-  };
+
+    calculateProfitLoss();
+  }, [sales, getTotalSales]);
 
   const getInventoryValue = () => {
     return {
@@ -54,11 +86,31 @@ export default function ReportsScreen() {
   };
 
   const getTopSellingProducts = () => {
-    // This would normally come from sales data
-    return products.slice(0, 5);
+    // Calculate top selling products based on actual sales data
+    const productSales: { [key: string]: number } = {};
+
+    // Aggregate sales by product
+    sales.forEach(sale => {
+      sale.items.forEach(item => {
+        if (productSales[item.productId]) {
+          productSales[item.productId] += item.quantity;
+        } else {
+          productSales[item.productId] = item.quantity;
+        }
+      });
+    });
+
+    // Sort products by sales quantity
+    const sortedProducts = products
+      .map(product => ({
+        ...product,
+        totalSold: productSales[product.id] || 0
+      }))
+      .sort((a, b) => b.totalSold - a.totalSold);
+
+    return sortedProducts.slice(0, 5);
   };
 
-  const profitLoss = calculateProfitLoss();
   const inventory = getInventoryValue();
   const lowStockItems = getLowStockItems();
   const topProducts = getTopSellingProducts();
@@ -158,6 +210,9 @@ export default function ReportsScreen() {
             <Text style={styles.lossNoteDetail}>
               {t('revenue')}: {formatCurrency(profitLoss.revenue)} | {t('cost')}: {formatCurrency(profitLoss.cost)}
             </Text>
+            <Text style={[styles.lossNoteDetail, { marginTop: width * 0.01 }]}>
+              {t('profitMargin')}: {profitLoss.margin.toFixed(2)}%
+            </Text>
           </View>
         </View>
 
@@ -231,8 +286,8 @@ export default function ReportsScreen() {
                 <Text style={styles.productBrand}>{product.brand}</Text>
               </View>
               <View style={styles.productStats}>
-                <Text style={styles.productValue}>{formatCurrency(product.sellingPrice * product.pieces)}</Text>
-                <Text style={styles.productQty}>{product.pieces} {t('units')}</Text>
+                <Text style={styles.productValue}>{formatCurrency(product.sellingPrice * (product as any).totalSold)}</Text>
+                <Text style={styles.productQty}>{(product as any).totalSold} {t('units')}</Text>
               </View>
             </View>
           ))}

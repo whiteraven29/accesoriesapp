@@ -13,6 +13,7 @@ export default function SignupScreen() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [shopName, setShopName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,7 +21,7 @@ export default function SignupScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSignup = async () => {
-    if (!username || !email || !password || !confirmPassword) {
+    if (!username || !email || !password || !confirmPassword || !shopName) {
       Alert.alert(t('error'), 'Please fill in all required fields');
       return;
     }
@@ -45,6 +46,7 @@ export default function SignupScreen() {
           data: {
             username: username,
             full_name: fullName,
+            shop_name: shopName,
           }
         }
       });
@@ -64,6 +66,7 @@ export default function SignupScreen() {
             full_name: fullName,
             email: email,
             phone: phone || null,
+            shop_name: shopName,
           }, {
             onConflict: 'id' // Specify the conflict target
           });
@@ -144,6 +147,18 @@ export default function SignupScreen() {
               onChangeText={setPhone}
               placeholder="Enter your phone number"
               keyboardType="phone-pad"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Shop Name *</Text>
+            <TextInput
+              style={styles.textInput}
+              value={shopName}
+              onChangeText={setShopName}
+              placeholder="Enter your shop name"
+              autoCapitalize="words"
               placeholderTextColor="#9CA3AF"
             />
           </View>
