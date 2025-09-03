@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, useWindowDimensions } from 'react-native';
-import { Users, Plus, Search, CreditCard as Edit, Trash2, CreditCard, DollarSign, User } from 'lucide-react-native';
+import { Users, Plus, Search, CreditCard as Edit, Trash2, CreditCard, DollarSign, User, RefreshCw } from 'lucide-react-native';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useCustomers } from '../../hooks/useCustomers';
 
 export default function CustomersScreen() {
   const { t } = useLanguage();
-  const { customers, addCustomer, updateCustomer, deleteCustomer, addLoan, payLoan } = useCustomers();
+  const { customers, addCustomer, updateCustomer, deleteCustomer, addLoan, payLoan, fetchCustomers } = useCustomers();
   const { width } = useWindowDimensions();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -16,12 +16,24 @@ export default function CustomersScreen() {
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [loanAmount, setLoanAmount] = useState<number>(0);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [refreshing, setRefreshing] = useState(false);
   const [newCustomer, setNewCustomer] = useState({
     name: '',
     phone: '',
     email: '',
     address: '',
   });
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchCustomers();
+    } catch (error) {
+      console.error('Error refreshing customers:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchCustomers]);
 
   const filteredCustomers = customers.filter(customer =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -193,9 +205,18 @@ export default function CustomersScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{t('customers')}</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
-          <Plus size={20} color="#FFFFFF" />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={[styles.refreshButton, refreshing && styles.refreshingButton]}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
+            <Plus size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.statsBar}>
@@ -404,6 +425,21 @@ const createStyles = (width: number) => StyleSheet.create({
     borderRadius: width * 0.05,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: width * 0.02,
+  },
+  refreshButton: {
+    backgroundColor: '#DC2626',
+    width: width * 0.1,
+    height: width * 0.1,
+    borderRadius: width * 0.05,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  refreshingButton: {
+    opacity: 0.6,
   },
   statsBar: {
     flexDirection: 'row',

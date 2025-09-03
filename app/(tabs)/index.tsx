@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3, LogOut } from 'lucide-react-native';
+import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3, LogOut, RefreshCw } from 'lucide-react-native';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
@@ -12,11 +13,12 @@ import { useAuth } from '../../hooks/useAuth';
 export default function HomeScreen() {
   const router = useRouter();
   const { t, isSwahili } = useLanguage();
-  const { products } = useProducts();
-  const { customers } = useCustomers();
-  const { sales, getTodaysSales, getTotalSales } = useSales();
+  const { products, fetchProducts } = useProducts();
+  const { customers, fetchCustomers } = useCustomers();
+  const { sales, getTodaysSales, getTotalSales, fetchSales } = useSales();
   const { user, signOut } = useAuth();
   const { width, height } = useWindowDimensions();
+  const [refreshing, setRefreshing] = useState(false);
   
   // Calculate dashboard data from real data
   const dashboardData = {
@@ -31,6 +33,21 @@ export default function HomeScreen() {
     pendingLoans: customers.reduce((total, customer) => total + customer.loanBalance, 0),
     salesTrend: 0, // This would need to be calculated from historical data
     profitTrend: 0, // This would need to be calculated from historical data
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        fetchProducts(),
+        fetchCustomers(),
+        fetchSales()
+      ]);
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const StatCard = ({ 
@@ -88,12 +105,21 @@ export default function HomeScreen() {
               {isSwahili ? 'Duka la Simu' : 'Phone Shop POS'}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={signOut}
-          >
-            <LogOut size={20} color="#FFFFFF" />
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              style={[styles.refreshButton, refreshing && styles.refreshingButton]}
+              onPress={handleRefresh}
+              disabled={refreshing}
+            >
+              <RefreshCw size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={signOut}
+            >
+              <LogOut size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </View>
         <Text style={styles.date}>
           {new Date().toLocaleDateString(isSwahili ? 'sw-TZ' : 'en-TZ')}
@@ -206,10 +232,22 @@ const createStyles = (width: number) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: width * 0.02,
+  },
   logoutButton: {
     padding: width * 0.02,
     borderRadius: width * 0.02,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  refreshButton: {
+    padding: width * 0.02,
+    borderRadius: width * 0.02,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  refreshingButton: {
+    opacity: 0.6,
   },
   greeting: {
     fontSize: width * 0.04,

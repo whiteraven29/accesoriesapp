@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions } from 'react-native';
-import { ShoppingCart, Plus, Minus, Trash2, Calculator, Users, CreditCard } from 'lucide-react-native';
+import { ShoppingCart, Plus, Minus, Trash2, Calculator, Users, CreditCard, RefreshCw } from 'lucide-react-native';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
@@ -10,8 +10,8 @@ import { useCustomers } from '../../hooks/useCustomers';
 interface CartItem {
   productId: string;
   quantity: number;
-  useLoanPrice?: boolean;
-  loanDiscount?: number;
+  discount?: number; // Percentage discount (0-100)
+  useLoan?: boolean; // Whether to use loan for this item
 }
 
 export default function SalesScreen() {
@@ -27,8 +27,9 @@ export default function SalesScreen() {
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
-  const [currentLoanItem, setCurrentLoanItem] = useState<CartItem | null>(null);
-  const [loanDiscount, setLoanDiscount] = useState<number>(0);
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [currentItem, setCurrentItem] = useState<CartItem | null>(null);
+  const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const { width } = useWindowDimensions();
   const styles = createStyles(width);
 
@@ -94,11 +95,11 @@ export default function SalesScreen() {
       if (!product) return total;
 
       const basePrice = product.sellingPrice;
-      const finalPrice = item.useLoanPrice && item.loanDiscount
-        ? basePrice - (basePrice * item.loanDiscount / 100)
+      const discountedPrice = item.discount
+        ? basePrice - (basePrice * item.discount / 100)
         : basePrice;
 
-      return total + (finalPrice * item.quantity);
+      return total + (discountedPrice * item.quantity);
     }, 0);
   };
 
@@ -107,26 +108,34 @@ export default function SalesScreen() {
     setShowCustomerModal(false);
   };
 
-  const applyLoanPricing = (productId: string) => {
+  const applyLoan = (productId: string) => {
+    setCart(prev => prev.map(item =>
+      item.productId === productId
+        ? { ...item, useLoan: !item.useLoan }
+        : item
+    ));
+  };
+
+  const applyDiscount = (productId: string) => {
     const cartItem = cart.find(item => item.productId === productId);
     if (cartItem) {
-      setCurrentLoanItem(cartItem);
-      setShowLoanModal(true);
+      setCurrentItem(cartItem);
+      setShowDiscountModal(true);
     }
   };
 
-  const confirmLoanPricing = () => {
-    if (currentLoanItem && loanDiscount > 0 && loanDiscount <= 100) {
+  const confirmDiscount = () => {
+    if (currentItem && discountPercentage >= 0 && discountPercentage <= 100) {
       setCart(prev => prev.map(item =>
-        item.productId === currentLoanItem.productId
-          ? { ...item, useLoanPrice: true, loanDiscount }
+        item.productId === currentItem.productId
+          ? { ...item, discount: discountPercentage }
           : item
       ));
-      setShowLoanModal(false);
-      setCurrentLoanItem(null);
-      setLoanDiscount(0);
+      setShowDiscountModal(false);
+      setCurrentItem(null);
+      setDiscountPercentage(0);
     } else {
-      Alert.alert(t('error'), 'Please enter a valid discount percentage (1-100%)');
+      Alert.alert(t('error'), 'Please enter a valid discount percentage (0-100%)');
     }
   };
 
@@ -145,19 +154,21 @@ export default function SalesScreen() {
       return;
     }
 
-    // Calculate loan amounts and create loan records if customer is selected
+    // Calculate loan amounts if customer is selected and items are marked for loan
     if (selectedCustomer) {
-      const loanItems = cart.filter(item => item.useLoanPrice && item.loanDiscount);
+      const loanItems = cart.filter(item => item.useLoan);
       if (loanItems.length > 0) {
         let totalLoanAmount = 0;
 
         for (const item of loanItems) {
           const product = products.find(p => p.id === item.productId);
-          if (product && item.loanDiscount) {
-            const originalPrice = product.sellingPrice * item.quantity;
-            const discountedPrice = originalPrice - (originalPrice * item.loanDiscount / 100);
-            const loanAmount = originalPrice - discountedPrice;
-            totalLoanAmount += loanAmount;
+          if (product) {
+            const basePrice = product.sellingPrice;
+            const discountedPrice = item.discount
+              ? basePrice - (basePrice * item.discount / 100)
+              : basePrice;
+            const itemTotal = discountedPrice * item.quantity;
+            totalLoanAmount += itemTotal;
           }
         }
 
@@ -187,8 +198,8 @@ export default function SalesScreen() {
         if (!product) return { productId: item.productId, quantity: item.quantity, price: 0 };
 
         const basePrice = product.sellingPrice;
-        const finalPrice = item.useLoanPrice && item.loanDiscount
-          ? basePrice - (basePrice * item.loanDiscount / 100)
+        const finalPrice = item.discount
+          ? basePrice - (basePrice * item.discount / 100)
           : basePrice;
 
         return {
@@ -278,40 +289,53 @@ export default function SalesScreen() {
         </View>
         
         {cart.map(item => {
-          const product = products.find(p => p.id === item.productId);
-          if (!product) return null;
+           const product = products.find(p => p.id === item.productId);
+           if (!product) return null;
 
-          const basePrice = product.sellingPrice;
-          const finalPrice = item.useLoanPrice && item.loanDiscount
-            ? basePrice - (basePrice * item.loanDiscount / 100)
-            : basePrice;
-          const totalItemPrice = finalPrice * item.quantity;
+           const basePrice = product.sellingPrice;
+           const discountedPrice = item.discount
+             ? basePrice - (basePrice * item.discount / 100)
+             : basePrice;
+           const totalItemPrice = discountedPrice * item.quantity;
 
-          return (
-            <View key={item.productId} style={styles.cartItem}>
-              <View style={styles.cartItemHeader}>
-                <Text style={styles.cartItemName}>{product.name}</Text>
-                {selectedCustomer && (
-                  <TouchableOpacity
-                    style={styles.loanButton}
-                    onPress={() => applyLoanPricing(item.productId)}
-                  >
-                    <CreditCard size={16} color="#FFFFFF" />
-                    <Text style={styles.loanButtonText}>Loan</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              <Text style={styles.cartItemDetails}>
-                {item.quantity} x {formatCurrency(finalPrice)} = {formatCurrency(totalItemPrice)}
-              </Text>
-              {item.useLoanPrice && item.loanDiscount && (
-                <Text style={styles.loanDiscountText}>
-                  Loan discount: {item.loanDiscount}% off original price {formatCurrency(basePrice)}
-                </Text>
-              )}
-            </View>
-          );
-        })}
+           return (
+             <View key={item.productId} style={styles.cartItem}>
+               <View style={styles.cartItemHeader}>
+                 <Text style={styles.cartItemName}>{product.name}</Text>
+                 <View style={styles.itemActions}>
+                   <TouchableOpacity
+                     style={styles.discountButton}
+                     onPress={() => applyDiscount(item.productId)}
+                   >
+                     <Text style={styles.discountButtonText}>%</Text>
+                   </TouchableOpacity>
+                   {selectedCustomer && (
+                     <TouchableOpacity
+                       style={[styles.loanButton, item.useLoan && styles.activeLoanButton]}
+                       onPress={() => applyLoan(item.productId)}
+                     >
+                       <CreditCard size={16} color="#FFFFFF" />
+                       <Text style={styles.loanButtonText}>Loan</Text>
+                     </TouchableOpacity>
+                   )}
+                 </View>
+               </View>
+               <Text style={styles.cartItemDetails}>
+                 {item.quantity} x {formatCurrency(discountedPrice)} = {formatCurrency(totalItemPrice)}
+               </Text>
+               {item.discount && (
+                 <Text style={styles.discountText}>
+                   Discount: {item.discount}% off original price {formatCurrency(basePrice)}
+                 </Text>
+               )}
+               {item.useLoan && (
+                 <Text style={styles.loanText}>
+                   Loan applied for this item
+                 </Text>
+               )}
+             </View>
+           );
+         })}
         
         <View style={styles.cartTotal}>
           <Text style={styles.cartTotalText}>{t('total')}: {formatCurrency(getCartTotal())}</Text>
@@ -329,7 +353,16 @@ export default function SalesScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>{t('pointOfSale')}</Text>
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>{t('pointOfSale')}</Text>
+          <TouchableOpacity
+            style={[styles.refreshButton, refreshing && styles.refreshingButton]}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Customer Selection */}
@@ -481,53 +514,53 @@ export default function SalesScreen() {
         </View>
       </Modal>
 
-      {/* Loan Pricing Modal */}
-      <Modal visible={showLoanModal} animationType="slide" presentationStyle="pageSheet">
+      {/* Discount Modal */}
+      <Modal visible={showDiscountModal} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowLoanModal(false)}>
+            <TouchableOpacity onPress={() => setShowDiscountModal(false)}>
               <Text style={styles.cancelButton}>{t('cancel')}</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Apply Loan Discount</Text>
-            <TouchableOpacity onPress={confirmLoanPricing}>
+            <Text style={styles.modalTitle}>Apply Discount</Text>
+            <TouchableOpacity onPress={confirmDiscount}>
               <Text style={styles.saveButton}>Apply</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.modalContent}>
-            {currentLoanItem && (
+            {currentItem && (
               <View>
                 <Text style={styles.loanProductName}>
-                  {products.find(p => p.id === currentLoanItem.productId)?.name}
+                  {products.find(p => p.id === currentItem.productId)?.name}
                 </Text>
                 <Text style={styles.loanProductPrice}>
-                  Original Price: {formatCurrency(products.find(p => p.id === currentLoanItem.productId)?.sellingPrice || 0)}
+                  Original Price: {formatCurrency(products.find(p => p.id === currentItem.productId)?.sellingPrice || 0)}
                 </Text>
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Discount Percentage (%)</Text>
                   <TextInput
                     style={styles.textInput}
-                    value={loanDiscount.toString()}
-                    onChangeText={(text) => setLoanDiscount(Number(text) || 0)}
+                    value={discountPercentage.toString()}
+                    onChangeText={(text) => setDiscountPercentage(Number(text) || 0)}
                     placeholder="Enter discount % (e.g., 10)"
                     keyboardType="numeric"
                     placeholderTextColor="#9CA3AF"
                   />
                 </View>
 
-                {loanDiscount > 0 && loanDiscount <= 100 && (
+                {discountPercentage >= 0 && discountPercentage <= 100 && (
                   <View style={styles.loanCalculation}>
                     <Text style={styles.loanCalculationText}>
                       Discounted Price: {formatCurrency(
-                        (products.find(p => p.id === currentLoanItem.productId)?.sellingPrice || 0) *
-                        (1 - loanDiscount / 100)
+                        (products.find(p => p.id === currentItem.productId)?.sellingPrice || 0) *
+                        (1 - discountPercentage / 100)
                       )}
                     </Text>
                     <Text style={styles.loanCalculationText}>
-                      Loan Amount: {formatCurrency(
-                        (products.find(p => p.id === currentLoanItem.productId)?.sellingPrice || 0) *
-                        (loanDiscount / 100) * currentLoanItem.quantity
+                      Savings: {formatCurrency(
+                        (products.find(p => p.id === currentItem.productId)?.sellingPrice || 0) *
+                        (discountPercentage / 100) * currentItem.quantity
                       )}
                     </Text>
                   </View>
@@ -553,11 +586,23 @@ const createStyles = (width: number) => StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   title: {
     fontSize: width * 0.06,
     fontWeight: 'bold',
     color: '#111827',
-    textAlign: 'center',
+  },
+  refreshButton: {
+    padding: width * 0.02,
+    borderRadius: width * 0.02,
+    backgroundColor: '#2563EB',
+  },
+  refreshingButton: {
+    opacity: 0.6,
   },
   customerSection: {
     margin: width * 0.03,
@@ -720,6 +765,23 @@ const createStyles = (width: number) => StyleSheet.create({
     color: '#111827',
     flex: 1,
   },
+  itemActions: {
+    flexDirection: 'row',
+    gap: width * 0.02,
+  },
+  discountButton: {
+    backgroundColor: '#16A34A',
+    width: width * 0.08,
+    height: width * 0.08,
+    borderRadius: width * 0.04,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  discountButtonText: {
+    color: '#FFFFFF',
+    fontSize: width * 0.04,
+    fontWeight: 'bold',
+  },
   loanButton: {
     backgroundColor: '#7C3AED',
     flexDirection: 'row',
@@ -729,6 +791,9 @@ const createStyles = (width: number) => StyleSheet.create({
     borderRadius: width * 0.015,
     gap: width * 0.01,
   },
+  activeLoanButton: {
+    backgroundColor: '#D97706',
+  },
   loanButtonText: {
     color: '#FFFFFF',
     fontSize: width * 0.03,
@@ -737,6 +802,18 @@ const createStyles = (width: number) => StyleSheet.create({
   loanDiscountText: {
     fontSize: width * 0.03,
     color: '#7C3AED',
+    fontStyle: 'italic',
+    marginTop: width * 0.005,
+  },
+  discountText: {
+    fontSize: width * 0.03,
+    color: '#16A34A',
+    fontStyle: 'italic',
+    marginTop: width * 0.005,
+  },
+  loanText: {
+    fontSize: width * 0.03,
+    color: '#D97706',
     fontStyle: 'italic',
     marginTop: width * 0.005,
   },

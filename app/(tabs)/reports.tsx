@@ -110,6 +110,13 @@ export default function ReportsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{t('reports')}</Text>
+        <TouchableOpacity
+          style={[styles.refreshButton, refreshing && styles.refreshingButton]}
+          onPress={onRefresh}
+          disabled={refreshing}
+        >
+          <RefreshCw size={20} color="#FFFFFF" />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.periodSelector}>
@@ -183,7 +190,7 @@ export default function ReportsScreen() {
             color="#16A34A"
           />
           <StatCard
-            title={t('pendingLoansReport')}
+            title={t('totalLoans')}
             value={formatCurrency(customers.reduce((total, c) => total + c.loanBalance, 0))}
             icon={<TrendingDown size={24} color="#D97706" />}
             color="#D97706"
@@ -258,6 +265,23 @@ export default function ReportsScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Discount Summary */}
+        <Text style={styles.sectionTitle}>{t('discountSummary')}</Text>
+        <View style={styles.customerInsights}>
+          <View style={styles.insightItem}>
+            <Text style={styles.insightLabel}>{t('totalDiscountsGiven')}</Text>
+            <Text style={styles.insightValue}>
+              {formatCurrency(0)} {/* Placeholder - would need discount tracking */}
+            </Text>
+          </View>
+          <View style={styles.insightItem}>
+            <Text style={styles.insightLabel}>{t('averageDiscount')}</Text>
+            <Text style={styles.insightValue}>
+              {formatCurrency(0)} {/* Placeholder - would need discount tracking */}
+            </Text>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -269,6 +293,9 @@ const createStyles = (width: number) => StyleSheet.create({
     backgroundColor: '#F9FAFB',
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: width * 0.04,
     paddingTop: width * 0.15,
     backgroundColor: '#FFFFFF',
@@ -279,7 +306,17 @@ const createStyles = (width: number) => StyleSheet.create({
     fontSize: width * 0.06,
     fontWeight: 'bold',
     color: '#111827',
-    textAlign: 'center',
+  },
+  refreshButton: {
+    backgroundColor: '#7C3AED',
+    width: width * 0.1,
+    height: width * 0.1,
+    borderRadius: width * 0.05,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  refreshingButton: {
+    opacity: 0.6,
   },
   periodSelector: {
     flexDirection: 'row',

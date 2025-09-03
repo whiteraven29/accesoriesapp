@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions } from 'react-native';
-import { Plus, Search, CreditCard as Edit, Trash2, Package } from 'lucide-react-native';
+import { Plus, Search, CreditCard as Edit, Trash2, Package, RefreshCw } from 'lucide-react-native';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
@@ -151,9 +151,18 @@ export default function ProductsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{t('products')}</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
-          <Plus size={20} color="#FFFFFF" />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={[styles.refreshButton, refreshing && styles.refreshingButton]}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
+            <Plus size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.statsBar}>
@@ -361,6 +370,21 @@ const createStyles = (width: number) => StyleSheet.create({
     borderRadius: width * 0.05,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: width * 0.02,
+  },
+  refreshButton: {
+    backgroundColor: '#16A34A',
+    width: width * 0.1,
+    height: width * 0.1,
+    borderRadius: width * 0.05,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  refreshingButton: {
+    opacity: 0.6,
   },
   statsBar: {
     flexDirection: 'row',
