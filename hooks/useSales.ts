@@ -16,6 +16,9 @@ export interface Sale {
   total: number;
   cashReceived: number;
   change: number;
+  customer_name?: string;
+  signature?: string;
+  description?: string;
   created_at: string;
 }
 
@@ -146,6 +149,9 @@ export function useSales() {
           total: saleData.total,
           cash_received: saleData.cashReceived,
           change: saleData.change,
+          customer_name: saleData.customer_name,
+          signature: saleData.signature,
+          description: saleData.description,
         },
       ])
       .select()
@@ -218,6 +224,31 @@ export function useSales() {
     return filteredSales.reduce((total, sale) => total + sale.total, 0);
   };
 
+  const updateSale = async (saleId: string, updates: Partial<Pick<Sale, 'customer_name' | 'signature' | 'description'>>) => {
+    const { data, error } = await supabase
+      .from('sales')
+      .update({
+        customer_name: updates.customer_name,
+        signature: updates.signature,
+        description: updates.description,
+      })
+      .eq('id', saleId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating sale:', error);
+      return null;
+    }
+
+    // Update local state
+    setSales(prev => prev.map(sale =>
+      sale.id === saleId ? { ...sale, ...updates } : sale
+    ));
+
+    return data;
+  };
+
   const getSalesCount = () => {
     return sales.length;
   };
@@ -225,6 +256,7 @@ export function useSales() {
   return {
     sales,
     addSale,
+    updateSale,
     getSalesByDate,
     getTodaysSales,
     getTotalSales,

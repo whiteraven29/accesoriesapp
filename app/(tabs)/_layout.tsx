@@ -1,6 +1,6 @@
 import { Tabs, useRouter } from 'expo-router';
 import { View, TouchableOpacity } from 'react-native';
-import { Chrome as Home, Package, ShoppingCart, Users, ChartBar as BarChart3, Languages } from 'lucide-react-native';
+import { Chrome as Home, Package, ShoppingCart, Users, ChartBar as BarChart3, Receipt, Languages } from 'lucide-react-native';
 import { useLanguage } from '../../hooks/LanguageContext';
 
 export default function TabLayout() {
@@ -65,6 +65,15 @@ export default function TabLayout() {
           title: 'POS',
           tabBarIcon: ({ size, color }) => (
             <ShoppingCart size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="receipts"
+        options={{
+          title: 'Receipts',
+          tabBarIcon: ({ size, color }) => (
+            <Receipt size={size} color={color} />
           ),
         }}
       />

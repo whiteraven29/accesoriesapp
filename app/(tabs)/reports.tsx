@@ -33,17 +33,48 @@ export default function ReportsScreen() {
     setRefreshing(false);
   };
 
+  const getDateRange = (period: 'today' | 'week' | 'month') => {
+    const now = new Date();
+    let startDate: Date;
+    let endDate: Date;
+
+    switch (period) {
+      case 'today':
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        break;
+      case 'week':
+        const dayOfWeek = now.getDay();
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (6 - dayOfWeek), 23, 59, 59);
+        break;
+      case 'month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        break;
+      default:
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    }
+
+    return { startDate, endDate };
+  };
+
   useEffect(() => {
     const calculateProfitLoss = async () => {
-      const totalRevenue = getTotalSales();
+      const { startDate, endDate } = getDateRange(selectedPeriod);
+      const totalRevenue = getTotalSales(startDate, endDate);
 
       // Calculate actual cost of goods sold by joining sale_items with products
       const { data: saleItemsWithProducts, error } = await supabase
         .from('sale_items')
         .select(`
           quantity,
-          products!inner(buying_price)
-        `);
+          products!inner(buying_price),
+          sales!inner(created_at)
+        `)
+        .gte('sales.created_at', startDate.toISOString())
+        .lte('sales.created_at', endDate.toISOString());
 
       if (error) {
         console.error('Error fetching sale items with products:', error);
@@ -71,7 +102,7 @@ export default function ReportsScreen() {
     };
 
     calculateProfitLoss();
-  }, [sales, getTotalSales]);
+  }, [sales, getTotalSales, selectedPeriod]);
 
   const getInventoryValue = () => {
     return {

@@ -55,6 +55,9 @@ create table sales (
   total numeric not null,
   cash_received numeric not null,
   change numeric not null,
+  customer_name text,
+  signature text,
+  description text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

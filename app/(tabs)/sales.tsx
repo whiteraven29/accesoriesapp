@@ -153,6 +153,8 @@ export default function SalesScreen() {
       Alert.alert(t('error'), 'Cart is empty');
       return;
     }
+    // Set cash received to total amount by default
+    setCashReceived(getCartTotal());
     setShowCheckout(true);
   };
 
