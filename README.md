@@ -34,8 +34,42 @@ Follow the instructions in [SUPABASE_SETUP.md](SUPABASE_SETUP.md) to set up your
 
 4. Start the development server:
    ```bash
-   npm start
+   npm run dev
    ```
+
+## Platform-Specific Instructions
+
+### Web
+To run the app on the web:
+
+1. Start the development server:
+   ```bash
+   npm run dev
+   ```
+   Then press `w` in the terminal to open in web browser, or visit `http://localhost:8081`
+
+2. To build for production:
+   ```bash
+   npm run build:web
+   ```
+   This will create a `dist` folder with the web build.
+
+### Android
+To run the app on Android:
+
+1. Install Expo Go on your Android device from the Google Play Store
+
+2. Start the development server:
+   ```bash
+   npm run dev
+   ```
+   Then scan the QR code with Expo Go app
+
+3. To build a production APK:
+   ```bash
+   npm run build:android
+   ```
+   This will create an APK file for distribution.
 
 ## Project Structure
 

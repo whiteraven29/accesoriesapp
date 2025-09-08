@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3, LogOut, RefreshCw } from 'lucide-react-native';
+import { TrendingUp, TrendingDown, Package, Users, ShoppingCart, CircleAlert as AlertCircle, BarChart3, LogOut, RefreshCw, Receipt } from 'lucide-react-native';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
@@ -21,6 +21,8 @@ export default function HomeScreen() {
   const { width, height } = useWindowDimensions();
   const [refreshing, setRefreshing] = useState(false);
   const [userProfile, setUserProfile] = useState<{username: string, shop_name: string} | null>(null);
+  const isWideScreen = width > 1024;
+  const isTablet = width > 768 && width <= 1024;
 
   useEffect(() => {
     const fetchUserProfile = async () => {
@@ -113,14 +115,15 @@ export default function HomeScreen() {
     </View>
   );
 
-  const styles = createStyles(width);
+  const styles = createStyles(width, isWideScreen);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      <LinearGradient
-        colors={['#2563EB', '#1D4ED8']}
-        style={styles.header}
-      >
+      <View style={styles.contentWrapper}>
+        <LinearGradient
+          colors={['#2563EB', '#1D4ED8']}
+          style={styles.header}
+        >
         <View style={styles.headerTop}>
           <View>
             <Text style={styles.greeting}>
@@ -155,34 +158,55 @@ export default function HomeScreen() {
         <StatCard
           title={t('todaySales')}
           value={formatCurrency(dashboardData.todaySales)}
-          icon={<ShoppingCart size={24} color="#2563EB" />}
+          icon={<ShoppingCart size={isWideScreen ? 32 : 24} color="#2563EB" />}
           trend="up"
           trendValue={dashboardData.salesTrend}
         />
         <StatCard
           title={t('todayProfit')}
           value={formatCurrency(dashboardData.todayProfit)}
-          icon={<TrendingUp size={24} color="#16A34A" />}
+          icon={<TrendingUp size={isWideScreen ? 32 : 24} color="#16A34A" />}
           trend="down"
           trendValue={Math.abs(dashboardData.profitTrend)}
           color="#16A34A"
         />
+        {isWideScreen && (
+          <StatCard
+            title={t('totalProducts')}
+            value={dashboardData.totalProducts.toString()}
+            icon={<Package size={32} color="#7C3AED" />}
+            color="#7C3AED"
+          />
+        )}
       </View>
 
-      <View style={styles.statsGrid}>
-        <StatCard
-          title={t('totalProducts')}
-          value={dashboardData.totalProducts.toString()}
-          icon={<Package size={24} color="#7C3AED" />}
-          color="#7C3AED"
-        />
-        <StatCard
-          title={t('totalCustomers')}
-          value={dashboardData.totalCustomers.toString()}
-          icon={<Users size={24} color="#DC2626" />}
-          color="#DC2626"
-        />
-      </View>
+      {!isWideScreen && (
+        <View style={styles.statsGrid}>
+          <StatCard
+            title={t('totalProducts')}
+            value={dashboardData.totalProducts.toString()}
+            icon={<Package size={24} color="#7C3AED" />}
+            color="#7C3AED"
+          />
+          <StatCard
+            title={t('totalCustomers')}
+            value={dashboardData.totalCustomers.toString()}
+            icon={<Users size={24} color="#DC2626" />}
+            color="#DC2626"
+          />
+        </View>
+      )}
+
+      {isWideScreen && (
+        <View style={styles.statsGrid}>
+          <StatCard
+            title={t('totalCustomers')}
+            value={dashboardData.totalCustomers.toString()}
+            icon={<Users size={32} color="#DC2626" />}
+            color="#DC2626"
+          />
+        </View>
+      )}
 
       <View style={styles.alertsSection}>
         <Text style={styles.sectionTitle}>{t('alerts')}</Text>
@@ -214,37 +238,53 @@ export default function HomeScreen() {
 
       <View style={styles.quickActions}>
         <Text style={styles.sectionTitle}>{t('quickActions')}</Text>
-        
+
         <View style={styles.actionGrid}>
-                  <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/sales')}>
-                    <ShoppingCart size={32} color="#2563EB" />
-                    <Text style={styles.actionText}>{t('newSale')}</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/products')}>
-                    <Package size={32} color="#16A34A" />
-                    <Text style={styles.actionText}>{t('addProduct')}</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/customers')}>
-                    <Users size={32} color="#7C3AED" />
-                    <Text style={styles.actionText}>{t('addCustomer')}</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/reports')}>
-                    <BarChart3 size={32} color="#DC2626" />
-                    <Text style={styles.actionText}>{t('viewReports')}</Text>
-                  </TouchableOpacity>
-                </View>
+          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/sales')}>
+            <ShoppingCart size={isWideScreen ? 40 : 32} color="#2563EB" />
+            <Text style={styles.actionText}>{t('newSale')}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/products')}>
+            <Package size={isWideScreen ? 40 : 32} color="#16A34A" />
+            <Text style={styles.actionText}>{t('addProduct')}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/customers')}>
+            <Users size={isWideScreen ? 40 : 32} color="#7C3AED" />
+            <Text style={styles.actionText}>{t('addCustomer')}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/reports')}>
+            <BarChart3 size={isWideScreen ? 40 : 32} color="#DC2626" />
+            <Text style={styles.actionText}>{t('viewReports')}</Text>
+          </TouchableOpacity>
+
+          {isWideScreen && (
+            <>
+              <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/receipts')}>
+                <Receipt size={40} color="#F59E0B" />
+                <Text style={styles.actionText}>{t('receipts')}</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
-    </ScrollView>
-  );
+              </View>
+            </ScrollView>
+          );
 }
 
-const createStyles = (width: number) => StyleSheet.create({
+const createStyles = (width: number, isWideScreen: boolean) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
+  },
+  contentWrapper: {
+    flex: 1,
+    maxWidth: Math.min(width, 1200), // Max width for large screens
+    alignSelf: 'center',
+    width: '100%',
   },
   header: {
     padding: width * 0.05,
@@ -386,13 +426,14 @@ const createStyles = (width: number) => StyleSheet.create({
   actionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: width * 0.025,
+    gap: isWideScreen ? 20 : width * 0.025,
   },
   actionCard: {
     backgroundColor: '#FFFFFF',
-    padding: width * 0.04,
-    borderRadius: width * 0.03,
-    width: '47%',
+    padding: isWideScreen ? 24 : width * 0.04,
+    borderRadius: isWideScreen ? 16 : width * 0.03,
+    width: isWideScreen ? '18%' : '47%',
+    minWidth: isWideScreen ? 140 : undefined,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },

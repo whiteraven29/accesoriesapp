@@ -107,35 +107,37 @@ export default function ProductsScreen() {
   const ProductTable = () => {
     const styles = createStyles(width);
 
+    const isWideScreen = width > 768; // Tablet/desktop breakpoint
+
     return (
       <View style={styles.tableContainer}>
         <View style={styles.tableHeader}>
-          <Text style={[styles.tableHeaderText, { flex: 2 }]}>{t('productName')}</Text>
-          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('brand')}</Text>
-          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('category')}</Text>
-          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('buyingPrice')}</Text>
-          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('sellingPrice')}</Text>
-          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('pieces')}</Text>
-          <Text style={[styles.tableHeaderText, { flex: 1 }]}>{t('actions')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: isWideScreen ? 3 : 2 }]}>{t('productName')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: isWideScreen ? 1.5 : 1 }]}>{t('brand')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: isWideScreen ? 1.5 : 1 }]}>{t('category')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: isWideScreen ? 1.5 : 1 }]}>{t('buyingPrice')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: isWideScreen ? 1.5 : 1 }]}>{t('sellingPrice')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: isWideScreen ? 1 : 1 }]}>{t('pieces')}</Text>
+          <Text style={[styles.tableHeaderText, { flex: isWideScreen ? 1 : 1 }]}>{t('actions')}</Text>
         </View>
         {filteredProducts.map((product) => {
           const profit = product.sellingPrice - product.buyingPrice;
           const isLowStock = product.pieces <= product.lowStockAlert;
-          
+
           return (
             <View key={product.id} style={styles.tableRow}>
-              <Text style={[styles.tableCell, { flex: 2 }]}>{product.name}</Text>
-              <Text style={[styles.tableCell, { flex: 1 }]}>{product.brand}</Text>
-              <Text style={[styles.tableCell, { flex: 1 }]}>{product.category}</Text>
-              <Text style={[styles.tableCell, { flex: 1, color: '#DC2626' }]}>{formatCurrency(product.buyingPrice)}</Text>
-              <Text style={[styles.tableCell, { flex: 1, color: '#16A34A' }]}>{formatCurrency(product.sellingPrice)}</Text>
-              <Text style={[styles.tableCell, { flex: 1, color: isLowStock ? '#DC2626' : '#111827' }]}>{product.pieces}</Text>
-              <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+              <Text style={[styles.tableCell, { flex: isWideScreen ? 3 : 2 }]}>{product.name}</Text>
+              <Text style={[styles.tableCell, { flex: isWideScreen ? 1.5 : 1 }]}>{product.brand}</Text>
+              <Text style={[styles.tableCell, { flex: isWideScreen ? 1.5 : 1 }]}>{product.category}</Text>
+              <Text style={[styles.tableCell, { flex: isWideScreen ? 1.5 : 1, color: '#DC2626' }]}>{formatCurrency(product.buyingPrice)}</Text>
+              <Text style={[styles.tableCell, { flex: isWideScreen ? 1.5 : 1, color: '#16A34A' }]}>{formatCurrency(product.sellingPrice)}</Text>
+              <Text style={[styles.tableCell, { flex: isWideScreen ? 1 : 1, color: isLowStock ? '#DC2626' : '#111827' }]}>{product.pieces}</Text>
+              <View style={{ flex: isWideScreen ? 1 : 1, flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
                 <TouchableOpacity onPress={() => handleEditProduct(product)}>
-                  <Edit size={16} color="#6B7280" />
+                  <Edit size={Math.min(width * 0.04, 16)} color="#6B7280" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => handleDeleteProduct(product.id)}>
-                  <Trash2 size={16} color="#DC2626" />
+                  <Trash2 size={Math.min(width * 0.04, 16)} color="#DC2626" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -149,7 +151,8 @@ export default function ProductsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={styles.contentWrapper}>
+        <View style={styles.header}>
         <Text style={styles.title}>{t('products')}</Text>
         <View style={styles.headerButtons}>
           <TouchableOpacity
@@ -210,6 +213,7 @@ export default function ProductsScreen() {
           </View>
         )}
       </ScrollView>
+     </View>
 
       <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modalContainer}>
@@ -347,6 +351,12 @@ const createStyles = (width: number) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
+  },
+  contentWrapper: {
+    flex: 1,
+    maxWidth: Math.min(width, 1200), // Max width for large screens
+    alignSelf: 'center',
+    width: '100%',
   },
   header: {
     flexDirection: 'row',
