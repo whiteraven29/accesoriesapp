@@ -24,6 +24,9 @@ export default function HomeScreen() {
   const isWideScreen = width > 1024;
   const isTablet = width > 768 && width <= 1024;
 
+  // Responsive scaling with maximum caps
+  const scaleFactor = Math.min(width / 375, 2.2); // Base on iPhone 6 width, max 2.2x for desktop
+
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
@@ -77,13 +80,13 @@ export default function HomeScreen() {
     }
   };
 
-  const StatCard = ({ 
-    title, 
-    value, 
-    icon, 
-    trend, 
-    trendValue, 
-    color = '#2563EB' 
+  const StatCard = ({
+    title,
+    value,
+    icon,
+    trend,
+    trendValue,
+    color = '#2563EB'
   }: {
     title: string;
     value: string;
@@ -100,9 +103,9 @@ export default function HomeScreen() {
         {trend && (
           <View style={[styles.trendContainer, { backgroundColor: trend === 'up' ? '#16A34A20' : '#DC262620' }]}>
             {trend === 'up' ? (
-              <TrendingUp size={16} color="#16A34A" />
+              <TrendingUp size={Math.min(16 * scaleFactor, 18)} color="#16A34A" />
             ) : (
-              <TrendingDown size={16} color="#DC2626" />
+              <TrendingDown size={Math.min(16 * scaleFactor, 18)} color="#DC2626" />
             )}
             <Text style={[styles.trendText, { color: trend === 'up' ? '#16A34A' : '#DC2626' }]}>
               {trendValue}%
@@ -115,7 +118,7 @@ export default function HomeScreen() {
     </View>
   );
 
-  const styles = createStyles(width, isWideScreen);
+  const styles = createStyles(width, isWideScreen, scaleFactor);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -158,14 +161,14 @@ export default function HomeScreen() {
         <StatCard
           title={t('todaySales')}
           value={formatCurrency(dashboardData.todaySales)}
-          icon={<ShoppingCart size={isWideScreen ? 32 : 24} color="#2563EB" />}
+          icon={<ShoppingCart size={Math.min(24 * scaleFactor, 28)} color="#2563EB" />}
           trend="up"
           trendValue={dashboardData.salesTrend}
         />
         <StatCard
           title={t('todayProfit')}
           value={formatCurrency(dashboardData.todayProfit)}
-          icon={<TrendingUp size={isWideScreen ? 32 : 24} color="#16A34A" />}
+          icon={<TrendingUp size={Math.min(24 * scaleFactor, 28)} color="#16A34A" />}
           trend="down"
           trendValue={Math.abs(dashboardData.profitTrend)}
           color="#16A34A"
@@ -174,7 +177,7 @@ export default function HomeScreen() {
           <StatCard
             title={t('totalProducts')}
             value={dashboardData.totalProducts.toString()}
-            icon={<Package size={32} color="#7C3AED" />}
+            icon={<Package size={Math.min(24 * scaleFactor, 28)} color="#7C3AED" />}
             color="#7C3AED"
           />
         )}
@@ -185,13 +188,13 @@ export default function HomeScreen() {
           <StatCard
             title={t('totalProducts')}
             value={dashboardData.totalProducts.toString()}
-            icon={<Package size={24} color="#7C3AED" />}
+            icon={<Package size={Math.min(24 * scaleFactor, 28)} color="#7C3AED" />}
             color="#7C3AED"
           />
           <StatCard
             title={t('totalCustomers')}
             value={dashboardData.totalCustomers.toString()}
-            icon={<Users size={24} color="#DC2626" />}
+            icon={<Users size={Math.min(24 * scaleFactor, 28)} color="#DC2626" />}
             color="#DC2626"
           />
         </View>
@@ -202,7 +205,7 @@ export default function HomeScreen() {
           <StatCard
             title={t('totalCustomers')}
             value={dashboardData.totalCustomers.toString()}
-            icon={<Users size={32} color="#DC2626" />}
+            icon={<Users size={Math.min(24 * scaleFactor, 28)} color="#DC2626" />}
             color="#DC2626"
           />
         </View>
@@ -241,29 +244,29 @@ export default function HomeScreen() {
 
         <View style={styles.actionGrid}>
           <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/sales')}>
-            <ShoppingCart size={isWideScreen ? 40 : 32} color="#2563EB" />
+            <ShoppingCart size={Math.min(32 * scaleFactor, 36)} color="#2563EB" />
             <Text style={styles.actionText}>{t('newSale')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/products')}>
-            <Package size={isWideScreen ? 40 : 32} color="#16A34A" />
+            <Package size={Math.min(32 * scaleFactor, 36)} color="#16A34A" />
             <Text style={styles.actionText}>{t('addProduct')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/customers')}>
-            <Users size={isWideScreen ? 40 : 32} color="#7C3AED" />
+            <Users size={Math.min(32 * scaleFactor, 36)} color="#7C3AED" />
             <Text style={styles.actionText}>{t('addCustomer')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/reports')}>
-            <BarChart3 size={isWideScreen ? 40 : 32} color="#DC2626" />
+            <BarChart3 size={Math.min(32 * scaleFactor, 36)} color="#DC2626" />
             <Text style={styles.actionText}>{t('viewReports')}</Text>
           </TouchableOpacity>
 
           {isWideScreen && (
             <>
               <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/receipts')}>
-                <Receipt size={40} color="#F59E0B" />
+                <Receipt size={Math.min(32 * scaleFactor, 36)} color="#F59E0B" />
                 <Text style={styles.actionText}>{t('receipts')}</Text>
               </TouchableOpacity>
             </>
@@ -275,7 +278,7 @@ export default function HomeScreen() {
           );
 }
 
-const createStyles = (width: number, isWideScreen: boolean) => StyleSheet.create({
+const createStyles = (width: number, isWideScreen: boolean, scaleFactor: number) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
@@ -287,10 +290,10 @@ const createStyles = (width: number, isWideScreen: boolean) => StyleSheet.create
     width: '100%',
   },
   header: {
-    padding: width * 0.05,
-    paddingTop: width * 0.12,
-    borderBottomLeftRadius: width * 0.05,
-    borderBottomRightRadius: width * 0.05,
+    padding: Math.min(20 * scaleFactor, 40),
+    paddingTop: Math.min(40 * scaleFactor, 60),
+    borderBottomLeftRadius: Math.min(20 * scaleFactor, 30),
+    borderBottomRightRadius: Math.min(20 * scaleFactor, 30),
   },
   headerTop: {
     flexDirection: 'row',
@@ -299,48 +302,48 @@ const createStyles = (width: number, isWideScreen: boolean) => StyleSheet.create
   },
   headerButtons: {
     flexDirection: 'row',
-    gap: width * 0.02,
+    gap: Math.min(8 * scaleFactor, 16),
   },
   logoutButton: {
-    padding: width * 0.02,
-    borderRadius: width * 0.02,
+    padding: Math.min(8 * scaleFactor, 16),
+    borderRadius: Math.min(8 * scaleFactor, 16),
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   refreshButton: {
-    padding: width * 0.02,
-    borderRadius: width * 0.02,
+    padding: Math.min(8 * scaleFactor, 16),
+    borderRadius: Math.min(8 * scaleFactor, 16),
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   refreshingButton: {
     opacity: 0.6,
   },
   greeting: {
-    fontSize: width * 0.04,
+    fontSize: Math.min(16 * scaleFactor, 20),
     color: '#E5E7EB',
-    marginBottom: width * 0.01,
+    marginBottom: Math.min(4 * scaleFactor, 8),
   },
   businessName: {
-    fontSize: width * 0.07,
+    fontSize: Math.min(24 * scaleFactor, 32),
     fontWeight: 'bold',
     color: '#FFFFFF',
-    marginBottom: width * 0.01,
+    marginBottom: Math.min(4 * scaleFactor, 8),
   },
   date: {
-    fontSize: width * 0.035,
+    fontSize: Math.min(14 * scaleFactor, 18),
     color: '#CBD5E1',
-    marginTop: width * 0.02,
+    marginTop: Math.min(8 * scaleFactor, 16),
   },
   statsGrid: {
     flexDirection: 'row',
-    paddingHorizontal: width * 0.03,
-    marginTop: width * 0.03,
-    gap: width * 0.025,
+    paddingHorizontal: Math.min(12 * scaleFactor, 24),
+    marginTop: Math.min(12 * scaleFactor, 24),
+    gap: Math.min(10 * scaleFactor, 20),
   },
   statCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    padding: width * 0.03,
-    borderRadius: width * 0.03,
+    padding: Math.min(12 * scaleFactor, 24),
+    borderRadius: Math.min(12 * scaleFactor, 20),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -351,55 +354,55 @@ const createStyles = (width: number, isWideScreen: boolean) => StyleSheet.create
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: width * 0.025,
+    marginBottom: Math.min(10 * scaleFactor, 20),
   },
   iconContainer: {
-    width: width * 0.12,
-    height: width * 0.12,
-    borderRadius: width * 0.025,
+    width: Math.min(48 * scaleFactor, 60),
+    height: Math.min(48 * scaleFactor, 60),
+    borderRadius: Math.min(10 * scaleFactor, 15),
     justifyContent: 'center',
     alignItems: 'center',
   },
   trendContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: width * 0.02,
-    paddingVertical: width * 0.01,
-    borderRadius: width * 0.015,
-    gap: width * 0.01,
+    paddingHorizontal: Math.min(8 * scaleFactor, 16),
+    paddingVertical: Math.min(4 * scaleFactor, 8),
+    borderRadius: Math.min(6 * scaleFactor, 12),
+    gap: Math.min(4 * scaleFactor, 8),
   },
   trendText: {
-    fontSize: width * 0.03,
+    fontSize: Math.min(12 * scaleFactor, 16),
     fontWeight: '600',
   },
   statValue: {
-    fontSize: width * 0.06,
+    fontSize: Math.min(24 * scaleFactor, 32),
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: width * 0.01,
+    marginBottom: Math.min(4 * scaleFactor, 8),
   },
   statTitle: {
-    fontSize: width * 0.035,
+    fontSize: Math.min(14 * scaleFactor, 18),
     color: '#6B7280',
   },
   alertsSection: {
-    padding: width * 0.03,
-    marginTop: width * 0.02,
+    padding: Math.min(12 * scaleFactor, 24),
+    marginTop: Math.min(8 * scaleFactor, 16),
   },
   sectionTitle: {
-    fontSize: width * 0.05,
+    fontSize: Math.min(20 * scaleFactor, 24),
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: width * 0.03,
+    marginBottom: Math.min(12 * scaleFactor, 24),
   },
   alertCard: {
     backgroundColor: '#FFFFFF',
-    padding: width * 0.03,
-    borderRadius: width * 0.025,
-    marginBottom: width * 0.02,
+    padding: Math.min(12 * scaleFactor, 24),
+    borderRadius: Math.min(10 * scaleFactor, 16),
+    marginBottom: Math.min(8 * scaleFactor, 16),
     flexDirection: 'row',
     alignItems: 'center',
-    gap: width * 0.03,
+    gap: Math.min(12 * scaleFactor, 24),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -410,30 +413,30 @@ const createStyles = (width: number, isWideScreen: boolean) => StyleSheet.create
     flex: 1,
   },
   alertTitle: {
-    fontSize: width * 0.04,
+    fontSize: Math.min(16 * scaleFactor, 20),
     fontWeight: '600',
     color: '#111827',
-    marginBottom: width * 0.005,
+    marginBottom: Math.min(2 * scaleFactor, 4),
   },
   alertDescription: {
-    fontSize: width * 0.035,
+    fontSize: Math.min(14 * scaleFactor, 18),
     color: '#6B7280',
   },
   quickActions: {
-    padding: width * 0.03,
-    paddingBottom: width * 0.06,
+    padding: Math.min(12 * scaleFactor, 24),
+    paddingBottom: Math.min(24 * scaleFactor, 40),
   },
   actionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: isWideScreen ? 20 : width * 0.025,
+    gap: isWideScreen ? Math.min(20 * scaleFactor, 24) : Math.min(10 * scaleFactor, 16),
   },
   actionCard: {
     backgroundColor: '#FFFFFF',
-    padding: isWideScreen ? 24 : width * 0.04,
-    borderRadius: isWideScreen ? 16 : width * 0.03,
+    padding: isWideScreen ? Math.min(24 * scaleFactor, 28) : Math.min(16 * scaleFactor, 20),
+    borderRadius: isWideScreen ? Math.min(16 * scaleFactor, 20) : Math.min(12 * scaleFactor, 16),
     width: isWideScreen ? '18%' : '47%',
-    minWidth: isWideScreen ? 140 : undefined,
+    minWidth: isWideScreen ? Math.min(140 * scaleFactor, 160) : undefined,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -442,8 +445,8 @@ const createStyles = (width: number, isWideScreen: boolean) => StyleSheet.create
     elevation: 3,
   },
   actionText: {
-    marginTop: width * 0.02,
-    fontSize: width * 0.035,
+    marginTop: Math.min(8 * scaleFactor, 12),
+    fontSize: Math.min(14 * scaleFactor, 16),
     fontWeight: '600',
     color: '#374151',
     textAlign: 'center',

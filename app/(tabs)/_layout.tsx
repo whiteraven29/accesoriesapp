@@ -9,6 +9,11 @@ export default function TabLayout() {
   const isWeb = Platform.OS === 'web';
   const isWideScreen = width > 1024; // Desktop breakpoint
 
+  // Responsive scaling with maximum caps
+  const scaleFactor = Math.min(width / 375, 2.5); // Base on iPhone 6 width, max 2.5x
+  const headerFontSize = Math.min(18 * scaleFactor, 24);
+  const iconSize = Math.min(24 * scaleFactor, 28);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
       <Tabs
@@ -17,24 +22,24 @@ export default function TabLayout() {
           headerTitle: 'Phone Shop POS',
           headerTitleStyle: {
             fontWeight: 'bold',
-            fontSize: isWideScreen ? 24 : Math.min(width * 0.05, 20),
+            fontSize: headerFontSize,
           },
           headerRight: () => (
             <TouchableOpacity
               style={{
-                padding: isWideScreen ? 12 : Math.min(width * 0.025, 10),
-                marginRight: isWideScreen ? 20 : Math.min(width * 0.025, 10),
+                padding: Math.min(12 * scaleFactor, 16),
+                marginRight: Math.min(16 * scaleFactor, 24),
                 backgroundColor: '#2563EB',
                 borderRadius: 20,
               }}
               onPress={toggleLanguage}
             >
-              <Languages size={isWideScreen ? 28 : Math.min(width * 0.06, 24)} color="#FFFFFF" />
+              <Languages size={iconSize} color="#FFFFFF" />
             </TouchableOpacity>
           ),
           headerStyle: {
             backgroundColor: '#FFFFFF',
-            height: isWideScreen ? 80 : Math.min(width * 0.15, 70),
+            height: Math.min(70 * scaleFactor, 80),
             shadowColor: '#000',
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: 0.1,
@@ -47,10 +52,10 @@ export default function TabLayout() {
             backgroundColor: '#FFFFFF',
             borderTopWidth: 1,
             borderTopColor: '#E5E7EB',
-            paddingBottom: 8,
-            paddingTop: 8,
-            height: isWideScreen ? 80 : 70,
-            paddingHorizontal: isWideScreen ? Math.max(width * 0.2, 200) : Math.min(width * 0.1, 100),
+            paddingBottom: Math.min(8 * scaleFactor, 12),
+            paddingTop: Math.min(8 * scaleFactor, 12),
+            height: Math.min(70 * scaleFactor, 80),
+            paddingHorizontal: isWideScreen ? Math.max(width * 0.15, 150) : Math.min(width * 0.05, 50),
             position: 'relative',
             shadowColor: '#000',
             shadowOffset: { width: 0, height: -2 },
@@ -66,7 +71,7 @@ export default function TabLayout() {
             height: 60,
           },
           tabBarLabelStyle: {
-            fontSize: isWideScreen ? 14 : Math.min(width * 0.03, 12),
+            fontSize: Math.min(12 * scaleFactor, 14),
             fontWeight: '500',
           },
           tabBarItemStyle: isWeb ? {
@@ -79,7 +84,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ size, color }) => (
-            <Home size={isWideScreen ? 32 : Math.min(size, width * 0.06)} color={color} />
+            <Home size={Math.min(size * scaleFactor, 28)} color={color} />
           ),
         }}
       />
@@ -88,7 +93,7 @@ export default function TabLayout() {
         options={{
           title: 'Products',
           tabBarIcon: ({ size, color }) => (
-            <Package size={isWideScreen ? 32 : Math.min(size, width * 0.06)} color={color} />
+            <Package size={Math.min(size * scaleFactor, 28)} color={color} />
           ),
         }}
       />
@@ -97,7 +102,7 @@ export default function TabLayout() {
         options={{
           title: 'POS',
           tabBarIcon: ({ size, color }) => (
-            <ShoppingCart size={isWideScreen ? 32 : Math.min(size, width * 0.06)} color={color} />
+            <ShoppingCart size={Math.min(size * scaleFactor, 28)} color={color} />
           ),
         }}
       />
@@ -106,7 +111,7 @@ export default function TabLayout() {
         options={{
           title: 'Receipts',
           tabBarIcon: ({ size, color }) => (
-            <Receipt size={isWideScreen ? 32 : Math.min(size, width * 0.06)} color={color} />
+            <Receipt size={Math.min(size * scaleFactor, 28)} color={color} />
           ),
         }}
       />
@@ -115,7 +120,7 @@ export default function TabLayout() {
         options={{
           title: 'Customers',
           tabBarIcon: ({ size, color }) => (
-            <Users size={isWideScreen ? 32 : Math.min(size, width * 0.06)} color={color} />
+            <Users size={Math.min(size * scaleFactor, 28)} color={color} />
           ),
         }}
       />
@@ -124,7 +129,7 @@ export default function TabLayout() {
         options={{
           title: 'Reports',
           tabBarIcon: ({ size, color }) => (
-            <BarChart3 size={isWideScreen ? 32 : Math.min(size, width * 0.06)} color={color} />
+            <BarChart3 size={Math.min(size * scaleFactor, 28)} color={color} />
           ),
         }}
       />
