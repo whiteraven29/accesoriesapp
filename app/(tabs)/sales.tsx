@@ -18,6 +18,18 @@ interface CartItem {
   useLoan?: boolean; // Whether to use loan for this item
 }
 
+interface Product {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  buyingPrice: number;
+  sellingPrice: number;
+  pieces: number;
+  lowStockAlert?: number;
+  imei?: string;
+}
+
 export default function SalesScreen() {
   const { t } = useLanguage();
   const { products, updateProductStock, fetchProducts } = useProducts();
@@ -385,175 +397,48 @@ export default function SalesScreen() {
     }
   };
 
-  const generateReceiptHTML = (sale: Sale, signature: string, description: string, userProfile: {username: string, shop_name: string} | null) => {
-    const date = new Date(sale.created_at).toLocaleDateString();
-    const time = new Date(sale.created_at).toLocaleTimeString();
-    const shopName = userProfile?.shop_name || 'AlexShop';
-    const username = userProfile?.username;
-
-    const itemsHTML = sale.items.map(item => {
-      const product = products.find(p => p.id === item.productId);
-      return `
-        <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;">${product?.name || 'Unknown Product'}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">TSh ${item.price.toLocaleString()}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">TSh ${(item.quantity * item.price).toLocaleString()}</td>
-        </tr>
-      `;
-    }).join('');
-
-    const customerHTML = selectedCustomerData ? `
-      <div style="margin: 20px 0; padding: 15px; background-color: #f0f8ff; border-radius: 8px;">
-        <h3 style="margin: 0 0 10px 0; color: #2563eb;">Customer Information</h3>
-        <p style="margin: 5px 0;"><strong>Name:</strong> ${selectedCustomerData.name}</p>
-        <p style="margin: 5px 0;"><strong>Phone:</strong> ${selectedCustomerData.phone}</p>
-      </div>
-    ` : '';
-
-    const signatureHTML = signature ? `
-      <div style="margin: 20px 0;">
-        <h3 style="margin: 0 0 10px 0; color: #2563eb;">Signature</h3>
-        <div style="border: 1px solid #ddd; padding: 10px; border-radius: 4px; font-style: italic;">
-          ${signature}
-        </div>
-      </div>
-    ` : '';
-
-    const descriptionHTML = description ? `
-      <div style="margin: 20px 0;">
-        <h3 style="margin: 0 0 10px 0; color: #2563eb;">Notes</h3>
-        <div style="border: 1px solid #ddd; padding: 10px; border-radius: 4px; white-space: pre-wrap;">
-          ${description}
-        </div>
-      </div>
-    ` : '';
+  const generateReceiptHTML = (
+    sale: Sale,
+    signature: string,
+    description: string,
+    userProfile: { username: string; shop_name: string } | null
+  ) => {
+    const itemsHTML = sale.items
+      .map((item) => {
+        const product = products.find((p) => p.id === item.productId);
+        return `
+          <tr>
+            <td>${product?.name || 'Unknown Product'}</td>
+            <td>${item.quantity}</td>
+            <td>${item.price.toLocaleString()}</td>
+            <td>${(item.quantity * item.price).toLocaleString()}</td>
+            ${
+              product?.category === 'Phones' && product?.imei
+                ? `<td>${product.imei}</td>` // Display IMEI for phones
+                : ''
+            }
+          </tr>
+        `;
+      })
+      .join('');
 
     return `
-      <!DOCTYPE html>
       <html>
-        <head>
-          <meta charset="utf-8">
-          <title>AlexShop Receipt</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              max-width: 400px;
-              margin: 0 auto;
-              padding: 20px;
-              background-color: #f9f9f9;
-            }
-            .header {
-              text-align: center;
-              margin-bottom: 30px;
-              padding: 20px;
-              background-color: white;
-              border-radius: 8px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .header h1 {
-              margin: 0;
-              color: #2563eb;
-              font-size: 24px;
-            }
-            .header p {
-              margin: 5px 0;
-              color: #666;
-            }
-            .content {
-              background-color: white;
-              border-radius: 8px;
-              padding: 20px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin: 20px 0;
-            }
-            th {
-              background-color: #f3f4f6;
-              padding: 10px;
-              text-align: left;
-              border-bottom: 2px solid #e5e7eb;
-            }
-            .summary {
-              margin: 20px 0;
-              padding: 15px;
-              background-color: #f3f4f6;
-              border-radius: 8px;
-            }
-            .summary-row {
-              display: flex;
-              justify-content: space-between;
-              margin: 5px 0;
-            }
-            .total {
-              font-weight: bold;
-              font-size: 18px;
-              color: #16a34a;
-            }
-            .footer {
-              text-align: center;
-              margin-top: 30px;
-              padding: 20px;
-              background-color: white;
-              border-radius: 8px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .footer p {
-              margin: 5px 0;
-              color: #666;
-            }
-          </style>
-        </head>
         <body>
-          <div class="header">
-            <h1>${shopName}</h1>
-            <p>Receipt #${sale.id.slice(-8).toUpperCase()}</p>
-            <p>${date} ${time}</p>
-          </div>
-
-          <div class="content">
-            <h2 style="margin-top: 0; color: #2563eb;">Items Purchased</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th style="text-align: center;">Qty</th>
-                  <th style="text-align: right;">Price</th>
-                  <th style="text-align: right;">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemsHTML}
-              </tbody>
-            </table>
-
-            <div class="summary">
-              <div class="summary-row">
-                <span>Total:</span>
-                <span class="total">TSh ${sale.total.toLocaleString()}</span>
-              </div>
-              <div class="summary-row">
-                <span>Cash Received:</span>
-                <span>TSh ${sale.cashReceived.toLocaleString()}</span>
-              </div>
-              <div class="summary-row">
-                <span>Change:</span>
-                <span>TSh ${sale.change.toLocaleString()}</span>
-              </div>
-            </div>
-
-            ${customerHTML}
-            ${signatureHTML}
-            ${descriptionHTML}
-          </div>
-
-          <div class="footer">
-            <p>Thank you for your business${username ? `, ${username}` : ''}!</p>
-            <p>${shopName} - Your Trusted Partner</p>
-          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Total</th>
+                <th>IMEI</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHTML}
+            </tbody>
+          </table>
         </body>
       </html>
     `;

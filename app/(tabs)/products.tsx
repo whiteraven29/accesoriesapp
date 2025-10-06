@@ -14,6 +14,7 @@ interface Product {
   sellingPrice: number;
   pieces: number;
   lowStockAlert: number;
+  imei?: string;
 }
 
 export default function ProductsScreen() {
@@ -23,7 +24,9 @@ export default function ProductsScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [newProduct, setNewProduct] = useState<Omit<Product, 'id'>>({
+  type NewProduct = Omit<Product, 'id'> & { imei?: string };
+
+  const [newProduct, setNewProduct] = useState<NewProduct>({
     name: '',
     brand: '',
     category: '',
@@ -31,6 +34,7 @@ export default function ProductsScreen() {
     sellingPrice: 0,
     pieces: 0,
     lowStockAlert: 5,
+    imei: undefined,
   });
   const [refreshing, setRefreshing] = useState(false);
   
@@ -49,6 +53,11 @@ export default function ProductsScreen() {
   const handleSaveProduct = () => {
     if (!newProduct.name || !newProduct.brand || !newProduct.category) {
       Alert.alert(t('error'), t('fillAllFields'));
+      return;
+    }
+
+    if (newProduct.category === 'Phones' && !newProduct.imei) {
+      Alert.alert(t('error'), t('imeiRequired')); // Ensure IMEI is required for phones
       return;
     }
 
@@ -84,6 +93,7 @@ export default function ProductsScreen() {
       sellingPrice: product.sellingPrice,
       pieces: product.pieces,
       lowStockAlert: product.lowStockAlert,
+      imei: product.imei, // Include IMEI
     });
     setEditingProduct(product);
     setShowAddModal(true);
@@ -149,6 +159,14 @@ export default function ProductsScreen() {
 
   const styles = createStyles(width);
 
+  function handleCategoryChange(category: string): void {
+    setNewProduct(prev => ({
+      ...prev,
+      category,
+      // Clear IMEI if switching away from Phones
+      ...(category !== 'Phones' ? { imei: undefined } : {})
+    }));
+  }
   return (
     <View style={styles.container}>
       <View style={styles.contentWrapper}>
@@ -235,7 +253,7 @@ export default function ProductsScreen() {
               <TextInput
                 style={styles.textInput}
                 value={newProduct.name}
-                onChangeText={(text) => setNewProduct({...newProduct, name: text})}
+                onChangeText={(text) => setNewProduct({ ...newProduct, name: text })}
                 placeholder={t('enterProductName')}
                 placeholderTextColor="#9CA3AF"
               />
@@ -246,7 +264,7 @@ export default function ProductsScreen() {
               <TextInput
                 style={styles.textInput}
                 value={newProduct.brand}
-                onChangeText={(text) => setNewProduct({...newProduct, brand: text})}
+                onChangeText={(text) => setNewProduct({ ...newProduct, brand: text })}
                 placeholder={t('enterBrand')}
                 placeholderTextColor="#9CA3AF"
               />
@@ -254,14 +272,54 @@ export default function ProductsScreen() {
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>{t('category')} *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={newProduct.category}
-                onChangeText={(text) => setNewProduct({...newProduct, category: text})}
-                placeholder={t('enterCategory')}
-                placeholderTextColor="#9CA3AF"
-              />
+              <View style={styles.categoryButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.categoryButton,
+                    newProduct.category === 'Accessories' && styles.selectedCategoryButton,
+                  ]}
+                  onPress={() => handleCategoryChange('Accessories')}
+                >
+                  <Text
+                    style={[
+                      styles.categoryButtonText,
+                      newProduct.category === 'Accessories' && styles.selectedCategoryButtonText,
+                    ]}
+                  >
+                    {t('accessories')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.categoryButton,
+                    newProduct.category === 'Phones' && styles.selectedCategoryButton,
+                  ]}
+                  onPress={() => handleCategoryChange('Phones')}
+                >
+                  <Text
+                    style={[
+                      styles.categoryButtonText,
+                      newProduct.category === 'Phones' && styles.selectedCategoryButtonText,
+                    ]}
+                  >
+                    {t('phones')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
+
+            {newProduct.category === 'Phones' && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('imei')} *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={newProduct.imei || ''}
+                  onChangeText={(text) => setNewProduct({ ...newProduct, imei: text })}
+                  placeholder={t('enterIMEI')}
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+            )}
 
             <View style={styles.row}>
               <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
@@ -269,7 +327,9 @@ export default function ProductsScreen() {
                 <TextInput
                   style={styles.textInput}
                   value={newProduct.buyingPrice.toString()}
-                  onChangeText={(text) => setNewProduct({...newProduct, buyingPrice: Number(text) || 0})}
+                  onChangeText={(text) =>
+                    setNewProduct({ ...newProduct, buyingPrice: Number(text) || 0 })
+                  }
                   placeholder="0"
                   keyboardType="numeric"
                   placeholderTextColor="#9CA3AF"
@@ -281,7 +341,9 @@ export default function ProductsScreen() {
                 <TextInput
                   style={styles.textInput}
                   value={newProduct.sellingPrice.toString()}
-                  onChangeText={(text) => setNewProduct({...newProduct, sellingPrice: Number(text) || 0})}
+                  onChangeText={(text) =>
+                    setNewProduct({ ...newProduct, sellingPrice: Number(text) || 0 })
+                  }
                   placeholder="0"
                   keyboardType="numeric"
                   placeholderTextColor="#9CA3AF"
@@ -295,7 +357,9 @@ export default function ProductsScreen() {
                 <TextInput
                   style={styles.textInput}
                   value={newProduct.pieces.toString()}
-                  onChangeText={(text) => setNewProduct({...newProduct, pieces: Number(text) || 0})}
+                  onChangeText={(text) =>
+                    setNewProduct({ ...newProduct, pieces: Number(text) || 0 })
+                  }
                   placeholder="0"
                   keyboardType="numeric"
                   placeholderTextColor="#9CA3AF"
@@ -307,7 +371,9 @@ export default function ProductsScreen() {
                 <TextInput
                   style={styles.textInput}
                   value={newProduct.lowStockAlert.toString()}
-                  onChangeText={(text) => setNewProduct({...newProduct, lowStockAlert: Number(text) || 5})}
+                  onChangeText={(text) =>
+                    setNewProduct({ ...newProduct, lowStockAlert: Number(text) || 5 })
+                  }
                   placeholder="5"
                   keyboardType="numeric"
                   placeholderTextColor="#9CA3AF"
@@ -661,5 +727,29 @@ const createStyles = (width: number) => StyleSheet.create({
   tableCell: {
     fontSize: width * 0.035,
     color: '#111827',
+  },
+  categoryButtons: {
+    flexDirection: 'row',
+    gap: width * 0.02,
+  },
+  categoryButton: {
+    flex: 1,
+    padding: width * 0.03,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: width * 0.025,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  selectedCategoryButton: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  categoryButtonText: {
+    fontSize: width * 0.04,
+    color: '#111827',
+  },
+  selectedCategoryButtonText: {
+    color: '#FFFFFF',
   },
 });

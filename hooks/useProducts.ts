@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabase';
 
 export interface Product {
+  imei?: string;
   id: string;
   name: string;
   brand: string;
@@ -117,6 +118,7 @@ export function useProducts() {
           selling_price: productData.sellingPrice,
           pieces: productData.pieces,
           low_stock_alert: productData.lowStockAlert,
+          imei: productData.imei, // Include IMEI
         },
       ])
       .select()
@@ -127,7 +129,6 @@ export function useProducts() {
       return null;
     }
 
-    // Map the returned data to match the interface
     return {
       ...data,
       buyingPrice: data.buying_price,
@@ -147,6 +148,7 @@ export function useProducts() {
         selling_price: productData.sellingPrice,
         pieces: productData.pieces,
         low_stock_alert: productData.lowStockAlert,
+        imei: productData.imei, // Include IMEI
       })
       .eq('id', id)
       .select()
@@ -157,7 +159,6 @@ export function useProducts() {
       return null;
     }
 
-    // Map the returned data to match the interface
     return {
       ...data,
       buyingPrice: data.buying_price,
