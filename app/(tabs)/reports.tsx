@@ -223,25 +223,27 @@ export default function ReportsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Loss Note */}
+        {/* Financial Summary */}
         <Text style={styles.sectionTitle}>{t('financialSummary')}</Text>
-        <View style={styles.profitLossCard}>
-          <View style={styles.profitLossHeader}>
-            <Text style={styles.profitLossTitle}>{t('lossInformation')}</Text>
-            <Calendar size={20} color="#6B7280" />
+        <View style={styles.financialSummaryCard}>
+          <View style={styles.financialSummarySides}>
+            <View style={[styles.financialSide, profitLoss.profit >= 0 ? styles.profitSide : styles.lossSide]}>
+              <Text style={styles.financialSideTitle}>
+                {profitLoss.profit >= 0 ? t('profit') : t('loss')}
+              </Text>
+              <Text style={styles.financialSideValue}>
+                {formatCurrency(Math.abs(profitLoss.profit))}
+              </Text>
+            </View>
           </View>
-
-          <View style={styles.lossNoteContainer}>
-            <Text style={styles.lossNote}>
-              {profitLoss.profit < 0
-                ? `${t('currentLoss')}: ${formatCurrency(Math.abs(profitLoss.profit))}`
-                : `${t('currentProfit')}: ${formatCurrency(profitLoss.profit)}`
-              }
+          <View style={styles.financialDetails}>
+            <Text style={styles.financialDetail}>
+              {t('revenue')}: {formatCurrency(profitLoss.revenue)}
             </Text>
-            <Text style={styles.lossNoteDetail}>
-              {t('revenue')}: {formatCurrency(profitLoss.revenue)} | {t('cost')}: {formatCurrency(profitLoss.cost)}
+            <Text style={styles.financialDetail}>
+              {t('cost')}: {formatCurrency(profitLoss.cost)}
             </Text>
-            <Text style={[styles.lossNoteDetail, { marginTop: width * 0.01 }]}>
+            <Text style={styles.financialDetail}>
               {t('profitMargin')}: {profitLoss.margin.toFixed(2)}%
             </Text>
           </View>
@@ -304,11 +306,11 @@ export default function ReportsScreen() {
           </>
         )}
 
-        {/* Top Products */}
+        {/* Product Performance */}
         <Text style={styles.sectionTitle}>{t('productPerformance')}</Text>
-        <View style={styles.topProductsCard}>
+        <View style={styles.productPerformanceCard}>
           {topProducts.map((product, index) => (
-            <View key={product.id} style={styles.topProductItem}>
+            <View key={product.id} style={styles.productPerformanceItem}>
               <View style={styles.productRank}>
                 <Text style={styles.rankNumber}>{index + 1}</Text>
               </View>
@@ -317,8 +319,9 @@ export default function ReportsScreen() {
                 <Text style={styles.productBrand}>{product.brand}</Text>
               </View>
               <View style={styles.productStats}>
-                <Text style={styles.productValue}>{formatCurrency(product.sellingPrice * (product as any).totalSold)}</Text>
-                <Text style={styles.productQty}>{(product as any).totalSold} {t('units')}</Text>
+                <Text style={styles.productValue}>
+                  {product.totalSold} {t('piecesSold')}
+                </Text>
               </View>
             </View>
           ))}
@@ -442,118 +445,65 @@ const createStyles = (width: number) => StyleSheet.create({
     marginBottom: width * 0.03,
     marginTop: width * 0.04,
   },
-  profitLossCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: width * 0.04,
-    padding: width * 0.04,
-    marginBottom: width * 0.04,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  profitLossHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: width * 0.04,
-  },
-  profitLossTitle: {
-    fontSize: width * 0.04,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  profitLossGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: width * 0.04,
-  },
-  profitLossItem: {
-    width: '47%',
-  },
-  profitLossLabel: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
-    marginBottom: width * 0.01,
-  },
-  profitLossValue: {
-    fontSize: width * 0.04,
-    fontWeight: 'bold',
-  },
-  lossNoteContainer: {
-    padding: width * 0.04,
-    alignItems: 'center',
-  },
-  lossNote: {
-    fontSize: width * 0.045,
-    fontWeight: 'bold',
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: width * 0.02,
-  },
-  lossNoteDetail: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
   statsGrid: {
     flexDirection: 'row',
-    gap: width * 0.03,
-    marginBottom: width * 0.02,
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: width * 0.04,
+    marginBottom: width * 0.04,
   },
   statCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    padding: width * 0.04,
     borderRadius: width * 0.04,
+    padding: width * 0.04,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    marginBottom: width * 0.04,
   },
   statHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: width * 0.03,
+    marginBottom: width * 0.02,
   },
   iconContainer: {
     width: width * 0.1,
     height: width * 0.1,
-    borderRadius: width * 0.02,
+    borderRadius: width * 0.05,
     justifyContent: 'center',
     alignItems: 'center',
   },
   trendContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: width * 0.015,
-    paddingVertical: width * 0.005,
-    borderRadius: width * 0.015,
-    gap: width * 0.005,
+    paddingHorizontal: width * 0.02,
+    paddingVertical: width * 0.01,
+    borderRadius: width * 0.02,
   },
   trendText: {
-    fontSize: width * 0.025,
-    fontWeight: '600',
+    fontSize: width * 0.03,
+    marginLeft: width * 0.01,
   },
   statValue: {
     fontSize: width * 0.045,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: width * 0.01,
   },
   statTitle: {
-    fontSize: width * 0.03,
+    fontSize: width * 0.035,
     color: '#6B7280',
+    marginTop: width * 0.01,
   },
   statSubtitle: {
-    fontSize: width * 0.025,
+    fontSize: width * 0.03,
     color: '#9CA3AF',
-    marginTop: width * 0.005,
+    marginTop: width * 0.01,
   },
-  lowStockCard: {
+  financialSummaryCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: width * 0.04,
     padding: width * 0.04,
@@ -564,36 +514,45 @@ const createStyles = (width: number) => StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  lowStockItem: {
+  financialSummarySides: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: width * 0.03,
+  },
+  financialSide: {
+    flex: 1,
+    padding: width * 0.04,
+    borderRadius: width * 0.04,
     alignItems: 'center',
-    paddingVertical: width * 0.02,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    justifyContent: 'center',
   },
-  lowStockName: {
-    fontSize: width * 0.035,
-    fontWeight: '600',
-    color: '#111827',
+  profitSide: {
+    backgroundColor: '#16A34A20',
   },
-  lowStockBrand: {
-    fontSize: width * 0.03,
-    color: '#6B7280',
+  lossSide: {
+    backgroundColor: '#DC262620',
   },
-  lowStockQty: {
-    alignItems: 'center',
-  },
-  lowStockNumber: {
+  financialSideTitle: {
     fontSize: width * 0.04,
     fontWeight: 'bold',
-    color: '#DC2626',
+    color: '#111827',
   },
-  lowStockLabel: {
-    fontSize: width * 0.025,
+  financialSideValue: {
+    fontSize: width * 0.045,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  financialDetails: {
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingTop: width * 0.03,
+  },
+  financialDetail: {
+    fontSize: width * 0.035,
     color: '#6B7280',
+    marginBottom: width * 0.01,
   },
-  topProductsCard: {
+  productPerformanceCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: width * 0.04,
     padding: width * 0.04,
@@ -604,7 +563,7 @@ const createStyles = (width: number) => StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  topProductItem: {
+  productPerformanceItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: width * 0.03,
@@ -676,5 +635,45 @@ const createStyles = (width: number) => StyleSheet.create({
     fontSize: width * 0.04,
     fontWeight: 'bold',
     color: '#111827',
+  },
+  lowStockCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: width * 0.04,
+    padding: width * 0.04,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: width * 0.04,
+  },
+  lowStockItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: width * 0.02,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  lowStockName: {
+    fontSize: width * 0.035,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  lowStockBrand: {
+    fontSize: width * 0.03,
+    color: '#6B7280',
+  },
+  lowStockQty: {
+    alignItems: 'flex-end',
+  },
+  lowStockLabel: {
+    fontSize: width * 0.03,
+    color: '#9CA3AF',
+  },
+  lowStockNumber: {
+    fontSize: width * 0.04,
+    fontWeight: 'bold',
+    color: '#DC2626',
   },
 });

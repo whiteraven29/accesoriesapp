@@ -53,10 +53,12 @@ export default function HomeScreen() {
   // Calculate dashboard data from real data
   const dashboardData = {
     todaySales: getTodaysSales().reduce((total, sale) => total + sale.total, 0),
-    todayProfit: getTodaysSales().reduce((total, sale) => total + (sale.total - sale.items.reduce((cost, item) => {
-      const product = products.find(p => p.id === item.productId);
-      return cost + (product ? product.buyingPrice * item.quantity : 0);
-    }, 0)), 0),
+    todayProfit: getTodaysSales().reduce((total, sale) => {
+      return total + sale.items.reduce((profit, item) => {
+        const product = products.find(p => p.id === item.productId);
+        return profit + (product ? (item.quantity * (product.sellingPrice - product.buyingPrice)) : 0);
+      }, 0);
+    }, 0),
     totalProducts: products.length,
     lowStockItems: products.filter(product => product.pieces <= product.lowStockAlert).length,
     totalCustomers: customers.length,
