@@ -46,6 +46,7 @@ export default function SignupScreen() {
           data: {
             username: username,
             full_name: fullName,
+            phone: phone,
             shop_name: shopName,
           }
         }
@@ -237,7 +238,9 @@ export default function SignupScreen() {
   );
 }
 
-const createStyles = (width: number) => StyleSheet.create({
+const createStyles = (viewportWidth: number) => {
+  const width = Math.min(Math.max(viewportWidth, 320), 480);
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
@@ -247,6 +250,9 @@ const createStyles = (width: number) => StyleSheet.create({
     padding: width * 0.05,
     justifyContent: 'center',
     paddingTop: width * 0.1,
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
   },
   header: {
     alignItems: 'center',
@@ -329,4 +335,5 @@ const createStyles = (width: number) => StyleSheet.create({
     color: '#2563EB',
     fontWeight: '600',
   },
-});
+  });
+};

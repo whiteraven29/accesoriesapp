@@ -7,6 +7,7 @@ export interface SaleItem {
   productId: string;
   quantity: number;
   price: number;
+  buyingPrice: number;
   created_at: string;
 }
 
@@ -21,6 +22,28 @@ export interface Sale {
   description?: string;
   created_at: string;
 }
+
+const mapSaleItem = (item: any): SaleItem => ({
+  id: item.id,
+  saleId: item.sale_id,
+  productId: item.product_id,
+  quantity: Number(item.quantity),
+  price: Number(item.price),
+  buyingPrice: Number(item.buying_price),
+  created_at: item.created_at,
+});
+
+const mapSale = (sale: any, items: SaleItem[] = []): Sale => ({
+  id: sale.id,
+  items,
+  total: Number(sale.total),
+  cashReceived: Number(sale.cash_received),
+  change: Number(sale.change),
+  customer_name: sale.customer_name ?? undefined,
+  signature: sale.signature ?? undefined,
+  description: sale.description ?? undefined,
+  created_at: sale.created_at,
+});
 
 export function useSales() {
   const [sales, setSales] = useState<Sale[]>([]);
@@ -99,7 +122,7 @@ export function useSales() {
     const salesWithItems = await Promise.all(
       (data || []).map(async (sale) => {
         const items = await fetchSaleItems(sale.id);
-        return { ...sale, items };
+        return mapSale(sale, items);
       })
     );
 
@@ -117,7 +140,7 @@ export function useSales() {
       return [];
     }
 
-    return data || [];
+    return (data || []).map(mapSaleItem);
   };
 
   const fetchSaleWithItems = async (saleId: string) => {
@@ -133,71 +156,32 @@ export function useSales() {
     }
 
     const items = await fetchSaleItems(saleId);
-    return { ...sale, items };
+    return mapSale(sale, items);
   };
 
-  const addSale = async (saleData: Omit<Sale, 'id' | 'created_at' | 'items'>, items: Omit<SaleItem, 'id' | 'saleId' | 'created_at'>[]) => {
+  const addSale = async (
+    saleData: Omit<Sale, 'id' | 'created_at' | 'items'>,
+    items: Omit<SaleItem, 'id' | 'saleId' | 'created_at' | 'buyingPrice'>[],
+    customerId?: string,
+    loanAmount = 0
+  ) => {
     const { data: user } = await supabase.auth.getUser();
     if (!user.user) return null;
 
-    // First, insert the sale
-    const { data: sale, error: saleError } = await supabase
-      .from('sales')
-      .insert([
-        {
-          user_id: user.user.id,
-          total: saleData.total,
-          cash_received: saleData.cashReceived,
-          change: saleData.change,
-          customer_name: saleData.customer_name,
-          signature: saleData.signature,
-          description: saleData.description,
-        },
-      ])
-      .select()
-      .single();
+    const { data: saleId, error } = await supabase.rpc('complete_sale', {
+      p_total: saleData.total,
+      p_cash_received: saleData.cashReceived,
+      p_items: items,
+      p_customer_id: customerId ?? null,
+      p_loan_amount: loanAmount,
+    });
 
-    if (saleError) {
-      console.error('Error adding sale:', saleError);
+    if (error || !saleId) {
+      console.error('Error adding sale:', error);
       return null;
     }
 
-    // Then, insert the sale items
-    const saleItemsData = items.map(item => ({
-      user_id: user.user.id,
-      sale_id: sale.id,
-      product_id: item.productId,
-      quantity: item.quantity,
-      price: item.price,
-    }));
-
-    const { data: saleItems, error: itemsError } = await supabase
-      .from('sale_items')
-      .insert(saleItemsData)
-      .select();
-
-    if (itemsError) {
-      console.error('Error adding sale items:', itemsError);
-      return null;
-    }
-
-    // Update product stock
-    for (const item of items) {
-      const { data: product, error: productError } = await supabase
-        .from('products')
-        .select('pieces')
-        .eq('id', item.productId)
-        .single();
-
-      if (!productError && product) {
-        await supabase
-          .from('products')
-          .update({ pieces: product.pieces - item.quantity })
-          .eq('id', item.productId);
-      }
-    }
-
-    return { ...sale, items: saleItems || [] };
+    return fetchSaleWithItems(saleId);
   };
 
   const getSalesByDate = (date: Date) => {

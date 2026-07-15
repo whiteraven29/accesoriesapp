@@ -8,6 +8,7 @@ import { useProducts } from '../../hooks/useProducts';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useSales } from '../../hooks/useSales';
 import { useAuth } from '../../hooks/useAuth';
+import { grossProfit, lineTotal } from '../../utils/calculations';
 import { supabase } from '../../utils/supabase';
 import { useState, useEffect } from 'react';
 
@@ -16,7 +17,7 @@ export default function HomeScreen() {
   const { t, isSwahili } = useLanguage();
   const { products, fetchProducts } = useProducts();
   const { customers, fetchCustomers } = useCustomers();
-  const { sales, getTodaysSales, getTotalSales, fetchSales } = useSales();
+  const { sales, getTodaysSales, fetchSales } = useSales();
   const { user, signOut } = useAuth();
   const { width, height } = useWindowDimensions();
   const [refreshing, setRefreshing] = useState(false);
@@ -25,7 +26,7 @@ export default function HomeScreen() {
   const isTablet = width > 768 && width <= 1024;
 
   // Responsive scaling with maximum caps
-  const scaleFactor = Math.min(width / 375, 2.2); // Base on iPhone 6 width, max 2.2x for desktop
+  const scaleFactor = Math.min(Math.max(width / 375, 0.9), 1.4);
 
   useEffect(() => {
     const fetchUserProfile = async () => {
@@ -50,21 +51,39 @@ export default function HomeScreen() {
     fetchUserProfile();
   }, []);
 
-  // Calculate dashboard data from real data
+  const profitForSales = (periodSales: typeof sales) => periodSales.reduce(
+    (total, sale) => total + sale.items.reduce(
+      (profit, item) => profit + grossProfit(
+        lineTotal(item.price, item.quantity),
+        lineTotal(item.buyingPrice, item.quantity)
+      ),
+      0
+    ),
+    0
+  );
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdaySales = sales.filter(
+    sale => new Date(sale.created_at).toDateString() === yesterday.toDateString()
+  );
+  const todaySales = getTodaysSales();
+  const todayRevenue = todaySales.reduce((total, sale) => total + sale.total, 0);
+  const yesterdayRevenue = yesterdaySales.reduce((total, sale) => total + sale.total, 0);
+  const todayProfit = profitForSales(todaySales);
+  const yesterdayProfit = profitForSales(yesterdaySales);
+  const percentageChange = (current: number, previous: number) =>
+    previous === 0 ? (current === 0 ? 0 : 100) : ((current - previous) / Math.abs(previous)) * 100;
+
+  // Calculate dashboard data from saved sale values and historical costs.
   const dashboardData = {
-    todaySales: getTodaysSales().reduce((total, sale) => total + sale.total, 0),
-    todayProfit: getTodaysSales().reduce((total, sale) => {
-      return total + sale.items.reduce((profit, item) => {
-        const product = products.find(p => p.id === item.productId);
-        return profit + (product ? (item.quantity * (product.sellingPrice - product.buyingPrice)) : 0);
-      }, 0);
-    }, 0),
+    todaySales: todayRevenue,
+    todayProfit,
     totalProducts: products.length,
     lowStockItems: products.filter(product => product.pieces <= product.lowStockAlert).length,
     totalCustomers: customers.length,
     pendingLoans: customers.reduce((total, customer) => total + customer.loanBalance, 0),
-    salesTrend: 0, // This would need to be calculated from historical data
-    profitTrend: 0, // This would need to be calculated from historical data
+    salesTrend: percentageChange(todayRevenue, yesterdayRevenue),
+    profitTrend: percentageChange(todayProfit, yesterdayProfit),
   };
 
   const handleRefresh = async () => {
@@ -164,14 +183,14 @@ export default function HomeScreen() {
           title={t('todaySales')}
           value={formatCurrency(dashboardData.todaySales)}
           icon={<ShoppingCart size={Math.min(24 * scaleFactor, 28)} color="#2563EB" />}
-          trend="up"
-          trendValue={dashboardData.salesTrend}
+          trend={dashboardData.salesTrend >= 0 ? 'up' : 'down'}
+          trendValue={Math.abs(dashboardData.salesTrend)}
         />
         <StatCard
           title={t('todayProfit')}
           value={formatCurrency(dashboardData.todayProfit)}
           icon={<TrendingUp size={Math.min(24 * scaleFactor, 28)} color="#16A34A" />}
-          trend="down"
+          trend={dashboardData.profitTrend >= 0 ? 'up' : 'down'}
           trendValue={Math.abs(dashboardData.profitTrend)}
           color="#16A34A"
         />

@@ -13,27 +13,16 @@ export default function ForgotPasswordScreen() {
 
   const handleResetPassword = async () => {
     if (!username) {
-      Alert.alert(t('error'), 'Please enter your username');
+      Alert.alert(t('error'), 'Please enter your email');
       return;
     }
 
     setLoading(true);
     try {
-      // First, get the user's email from their username
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('email')
-        .eq('username', username)
-        .single();
-
-      if (profileError || !profile) {
-        Alert.alert(t('error'), 'Username not found');
-        setLoading(false);
-        return;
-      }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
-        redirectTo: 'your-app-scheme://reset-password',
+      const { error } = await supabase.auth.resetPasswordForEmail(username.trim().toLowerCase(), {
+        redirectTo: typeof window !== 'undefined'
+          ? `${window.location.origin}/auth/update-password`
+          : 'alexapp://auth/update-password',
       });
 
       if (error) {
@@ -55,17 +44,18 @@ export default function ForgotPasswordScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Reset Password</Text>
-        <Text style={styles.subtitle}>Enter your username to reset your password</Text>
+        <Text style={styles.subtitle}>Enter your email to reset your password</Text>
       </View>
 
       <View style={styles.form}>
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Username</Text>
+          <Text style={styles.inputLabel}>Email</Text>
           <TextInput
             style={styles.textInput}
             value={username}
             onChangeText={setUsername}
-            placeholder="Enter your username"
+            placeholder="Enter your email"
+            keyboardType="email-address"
             autoCapitalize="none"
             placeholderTextColor="#9CA3AF"
           />
@@ -94,7 +84,9 @@ export default function ForgotPasswordScreen() {
   );
 }
 
-const createStyles = (width: number) => StyleSheet.create({
+const createStyles = (viewportWidth: number) => {
+  const width = Math.min(Math.max(viewportWidth, 320), 480);
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
@@ -118,6 +110,8 @@ const createStyles = (width: number) => StyleSheet.create({
   },
   form: {
     width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
   },
   inputGroup: {
     marginBottom: width * 0.05,
@@ -164,4 +158,5 @@ const createStyles = (width: number) => StyleSheet.create({
     color: '#2563EB',
     fontWeight: '600',
   },
-});
+  });
+};

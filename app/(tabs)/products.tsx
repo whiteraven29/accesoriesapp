@@ -4,6 +4,7 @@ import { Plus, Search, CreditCard as Edit, Trash2, Package, RefreshCw } from 'lu
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
+import { grossMarginPercentage, grossProfit, roundMoney } from '../../utils/calculations';
 
 interface Product {
   id: string;
@@ -50,7 +51,7 @@ export default function ProductsScreen() {
     product.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSaveProduct = () => {
+  const handleSaveProduct = async () => {
     if (!newProduct.name || !newProduct.brand || !newProduct.category) {
       Alert.alert(t('error'), t('fillAllFields'));
       return;
@@ -61,10 +62,25 @@ export default function ProductsScreen() {
       return;
     }
 
-    if (editingProduct) {
-      updateProduct(editingProduct.id, newProduct);
-    } else {
-      addProduct(newProduct);
+    if (
+      newProduct.buyingPrice < 0 ||
+      newProduct.sellingPrice < 0 ||
+      !Number.isInteger(newProduct.pieces) ||
+      newProduct.pieces < 0 ||
+      !Number.isInteger(newProduct.lowStockAlert) ||
+      newProduct.lowStockAlert < 0
+    ) {
+      Alert.alert(t('error'), 'Prices and stock values must be valid non-negative numbers.');
+      return;
+    }
+
+    const saved = editingProduct
+      ? await updateProduct(editingProduct.id, newProduct)
+      : await addProduct(newProduct);
+
+    if (!saved) {
+      Alert.alert(t('error'), 'Product could not be saved.');
+      return;
     }
 
     resetForm();
@@ -222,7 +238,9 @@ export default function ProductsScreen() {
         }
       >
         {filteredProducts.length > 0 ? (
-          <ProductTable />
+          <ScrollView horizontal showsHorizontalScrollIndicator={width < 768}>
+            <ProductTable />
+          </ScrollView>
         ) : (
           <View style={styles.emptyState}>
             <Package size={48} color="#9CA3AF" />
@@ -328,7 +346,7 @@ export default function ProductsScreen() {
                   style={styles.textInput}
                   value={newProduct.buyingPrice.toString()}
                   onChangeText={(text) =>
-                    setNewProduct({ ...newProduct, buyingPrice: Number(text) || 0 })
+                    setNewProduct({ ...newProduct, buyingPrice: roundMoney(Number(text.replace(/[^0-9]/g, ''))) })
                   }
                   placeholder="0"
                   keyboardType="numeric"
@@ -342,7 +360,7 @@ export default function ProductsScreen() {
                   style={styles.textInput}
                   value={newProduct.sellingPrice.toString()}
                   onChangeText={(text) =>
-                    setNewProduct({ ...newProduct, sellingPrice: Number(text) || 0 })
+                    setNewProduct({ ...newProduct, sellingPrice: roundMoney(Number(text.replace(/[^0-9]/g, ''))) })
                   }
                   placeholder="0"
                   keyboardType="numeric"
@@ -358,7 +376,7 @@ export default function ProductsScreen() {
                   style={styles.textInput}
                   value={newProduct.pieces.toString()}
                   onChangeText={(text) =>
-                    setNewProduct({ ...newProduct, pieces: Number(text) || 0 })
+                    setNewProduct({ ...newProduct, pieces: Math.max(0, Math.trunc(Number(text.replace(/[^0-9]/g, '')) || 0)) })
                   }
                   placeholder="0"
                   keyboardType="numeric"
@@ -372,7 +390,7 @@ export default function ProductsScreen() {
                   style={styles.textInput}
                   value={newProduct.lowStockAlert.toString()}
                   onChangeText={(text) =>
-                    setNewProduct({ ...newProduct, lowStockAlert: Number(text) || 5 })
+                    setNewProduct({ ...newProduct, lowStockAlert: Math.max(0, Math.trunc(Number(text.replace(/[^0-9]/g, '')) || 0)) })
                   }
                   placeholder="5"
                   keyboardType="numeric"
@@ -387,13 +405,13 @@ export default function ProductsScreen() {
                 <View style={styles.calculationRow}>
                   <Text>{t('profitPerUnit')}:</Text>
                   <Text style={styles.profitValue}>
-                    {formatCurrency(newProduct.sellingPrice - newProduct.buyingPrice)}
+                    {formatCurrency(grossProfit(newProduct.sellingPrice, newProduct.buyingPrice))}
                   </Text>
                 </View>
                 <View style={styles.calculationRow}>
                   <Text>{t('profitMargin')}:</Text>
                   <Text style={styles.profitValue}>
-                    {(((newProduct.sellingPrice - newProduct.buyingPrice) / newProduct.sellingPrice) * 100).toFixed(1)}%
+                    {grossMarginPercentage(newProduct.sellingPrice, newProduct.buyingPrice).toFixed(1)}%
                   </Text>
                 </View>
                 {newProduct.pieces > 0 && (
@@ -413,14 +431,16 @@ export default function ProductsScreen() {
   );
 }
 
-const createStyles = (width: number) => StyleSheet.create({
+const createStyles = (viewportWidth: number) => {
+  const width = Math.min(Math.max(viewportWidth, 320), 480);
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
   contentWrapper: {
     flex: 1,
-    maxWidth: Math.min(width, 1200), // Max width for large screens
+    maxWidth: Math.min(viewportWidth, 1200), // Max width for large screens
     alignSelf: 'center',
     width: '100%',
   },
@@ -429,7 +449,7 @@ const createStyles = (width: number) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: width * 0.03,
-    paddingTop: width * 0.12,
+    paddingTop: width * 0.03,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
@@ -694,6 +714,8 @@ const createStyles = (width: number) => StyleSheet.create({
     color: '#2563EB',
   },
   tableContainer: {
+    minWidth: viewportWidth < 768 ? 760 : undefined,
+    width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: width * 0.03,
     marginHorizontal: width * 0.03,
@@ -752,4 +774,5 @@ const createStyles = (width: number) => StyleSheet.create({
   selectedCategoryButtonText: {
     color: '#FFFFFF',
   },
-});
+  });
+};

@@ -10,6 +10,7 @@ import { useProducts } from '../../hooks/useProducts';
 import { useSales, Sale } from '../../hooks/useSales';
 import { useCustomers } from '../../hooks/useCustomers';
 import { supabase } from '../../utils/supabase';
+import { discountedUnitPrice, lineTotal, roundMoney } from '../../utils/calculations';
 
 interface CartItem {
   productId: string;
@@ -32,9 +33,9 @@ interface Product {
 
 export default function SalesScreen() {
   const { t } = useLanguage();
-  const { products, updateProductStock, fetchProducts } = useProducts();
+  const { products, fetchProducts } = useProducts();
   const { addSale, fetchSales } = useSales();
-  const { customers, addLoan } = useCustomers();
+  const { customers } = useCustomers();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
   const [cashReceived, setCashReceived] = useState<number>(0);
@@ -115,14 +116,22 @@ export default function SalesScreen() {
       const product = products.find(p => p.id === item.productId);
       if (!product) return total;
 
-      const basePrice = product.sellingPrice;
-      const discountedPrice = item.discount
-        ? basePrice - (basePrice * item.discount / 100)
-        : basePrice;
-
-      return total + (discountedPrice * item.quantity);
+      return total + lineTotal(
+        discountedUnitPrice(product.sellingPrice, item.discount),
+        item.quantity
+      );
     }, 0);
   };
+
+  const getLoanTotal = () => cart.reduce((total, item) => {
+    if (!item.useLoan) return total;
+    const product = products.find(p => p.id === item.productId);
+    return product
+      ? total + lineTotal(discountedUnitPrice(product.sellingPrice, item.discount), item.quantity)
+      : total;
+  }, 0);
+
+  const getCashDue = () => Math.max(0, getCartTotal() - getLoanTotal());
 
   const selectCustomer = (customerId: string | null) => {
     setSelectedCustomer(customerId);
@@ -166,71 +175,45 @@ export default function SalesScreen() {
       return;
     }
     // Set cash received to total amount by default
-    setCashReceived(getCartTotal());
+    setCashReceived(getCashDue());
     setShowCheckout(true);
   };
 
   const completeSale = async () => {
     const total = getCartTotal();
-    if (cashReceived < total) {
+    const loanAmount = getLoanTotal();
+    const cashDue = total - loanAmount;
+
+    if (loanAmount > 0 && !selectedCustomer) {
+      Alert.alert(t('error'), 'Select a customer for loan items');
+      return;
+    }
+    if (cashReceived < cashDue) {
       Alert.alert(t('error'), 'Insufficient cash received');
       return;
     }
-
-    // Calculate loan amounts if customer is selected and items are marked for loan
-    if (selectedCustomer) {
-      const loanItems = cart.filter(item => item.useLoan);
-      if (loanItems.length > 0) {
-        let totalLoanAmount = 0;
-
-        for (const item of loanItems) {
-          const product = products.find(p => p.id === item.productId);
-          if (product) {
-            const basePrice = product.sellingPrice;
-            const discountedPrice = item.discount
-              ? basePrice - (basePrice * item.discount / 100)
-              : basePrice;
-            const itemTotal = discountedPrice * item.quantity;
-            totalLoanAmount += itemTotal;
-          }
-        }
-
-        if (totalLoanAmount > 0) {
-          await addLoan(selectedCustomer, totalLoanAmount, `Loan for sale items`);
-        }
-      }
-    }
-
-    // Update product stock
-    cart.forEach(item => {
-      const product = products.find(p => p.id === item.productId);
-      if (product) {
-        updateProductStock(item.productId, product.pieces - item.quantity);
-      }
-    });
 
     // Add sale record with correct pricing
     const result = await addSale(
       {
         total,
         cashReceived,
-        change: cashReceived - total,
+        change: Math.max(0, cashReceived - cashDue),
       },
       cart.map(item => {
         const product = products.find(p => p.id === item.productId);
         if (!product) return { productId: item.productId, quantity: item.quantity, price: 0, buyingPrice: 0 };
 
-        const basePrice = product.sellingPrice;
-        const finalPrice = item.discount
-          ? basePrice - (basePrice * item.discount / 100)
-          : basePrice;
+        const finalPrice = discountedUnitPrice(product.sellingPrice, item.discount);
 
         return {
           productId: item.productId,
           quantity: item.quantity,
           price: finalPrice,
         };
-      })
+      }),
+      selectedCustomer ?? undefined,
+      loanAmount
     );
 
     // Show receipt
@@ -238,6 +221,10 @@ export default function SalesScreen() {
       setCurrentSale(result);
       await fetchUserProfile();
       setShowReceiptModal(true);
+      await fetchProducts();
+    } else {
+      Alert.alert(t('error'), 'Sale could not be completed. Your cart was kept unchanged.');
+      return;
     }
 
     // Reset
@@ -321,10 +308,8 @@ export default function SalesScreen() {
            if (!product) return null;
 
            const basePrice = product.sellingPrice;
-           const discountedPrice = item.discount
-             ? basePrice - (basePrice * item.discount / 100)
-             : basePrice;
-           const totalItemPrice = discountedPrice * item.quantity;
+           const discountedPrice = discountedUnitPrice(basePrice, item.discount);
+           const totalItemPrice = lineTotal(discountedPrice, item.quantity);
 
            return (
              <View key={item.productId} style={styles.cartItem}>
@@ -527,7 +512,9 @@ export default function SalesScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <ProductTable />
+        <ScrollView horizontal showsHorizontalScrollIndicator={width < 768}>
+          <ProductTable />
+        </ScrollView>
       </ScrollView>
 
       <CartSummary />
@@ -550,12 +537,14 @@ export default function SalesScreen() {
               {cart.map(item => {
                 const product = products.find(p => p.id === item.productId);
                 if (!product) return null;
+                const unitPrice = discountedUnitPrice(product.sellingPrice, item.discount);
                 
                 return (
                   <View key={item.productId} style={styles.checkoutItem}>
                     <Text style={styles.checkoutItemName}>{product.name}</Text>
                     <Text style={styles.checkoutItemPrice}>
-                      {item.quantity} x {formatCurrency(product.sellingPrice)} = {formatCurrency(product.sellingPrice * item.quantity)}
+                      {item.quantity} × {formatCurrency(unitPrice)} = {formatCurrency(lineTotal(unitPrice, item.quantity))}
+                      {item.useLoan ? ' (loan)' : ''}
                     </Text>
                   </View>
                 );
@@ -565,6 +554,10 @@ export default function SalesScreen() {
                 <Text style={styles.checkoutTotalText}>
                   {t('total')}: {formatCurrency(getCartTotal())}
                 </Text>
+                {getLoanTotal() > 0 && (
+                  <Text style={styles.checkoutItemPrice}>Loan: {formatCurrency(getLoanTotal())}</Text>
+                )}
+                <Text style={styles.checkoutItemPrice}>Cash due: {formatCurrency(getCashDue())}</Text>
               </View>
             </View>
 
@@ -575,7 +568,7 @@ export default function SalesScreen() {
                 <TextInput
                   style={styles.textInput}
                   value={cashReceived.toString()}
-                  onChangeText={(text) => setCashReceived(Number(text) || 0)}
+                  onChangeText={(text) => setCashReceived(roundMoney(Number(text.replace(/[^0-9]/g, ''))))}
                   placeholder="0"
                   keyboardType="numeric"
                   placeholderTextColor="#9CA3AF"
@@ -586,9 +579,9 @@ export default function SalesScreen() {
                 <View style={styles.changeInfo}>
                   <Text style={styles.changeLabel}>{t('change')}:</Text>
                   <Text style={[styles.changeAmount, { 
-                    color: cashReceived >= getCartTotal() ? '#16A34A' : '#DC2626' 
-                  }]}>
-                    {formatCurrency(Math.max(0, cashReceived - getCartTotal()))}
+                    color: cashReceived >= getCashDue() ? '#16A34A' : '#DC2626' 
+                  }]}> 
+                    {formatCurrency(Math.max(0, cashReceived - getCashDue()))}
                   </Text>
                 </View>
               )}
@@ -810,14 +803,16 @@ export default function SalesScreen() {
   );
 }
 
-const createStyles = (width: number) => StyleSheet.create({
+const createStyles = (viewportWidth: number) => {
+  const width = Math.min(Math.max(viewportWidth, 320), 480);
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
   header: {
     padding: width * 0.03,
-    paddingTop: width * 0.12,
+    paddingTop: width * 0.03,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
@@ -1188,6 +1183,8 @@ const createStyles = (width: number) => StyleSheet.create({
     fontWeight: 'bold',
   },
   tableContainer: {
+    minWidth: viewportWidth < 768 ? 640 : undefined,
+    width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: width * 0.03,
     marginHorizontal: width * 0.03,
@@ -1425,4 +1422,5 @@ const createStyles = (width: number) => StyleSheet.create({
     fontSize: width * 0.035,
     fontWeight: '600',
   },
-});
+  });
+};

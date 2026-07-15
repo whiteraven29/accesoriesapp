@@ -6,13 +6,16 @@ import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useSales } from '../../hooks/useSales';
+import { useLosses } from '../../hooks/useLosses';
 import { supabase } from '../../utils/supabase';
+import { grossMarginPercentage, grossProfit, lineTotal } from '../../utils/calculations';
 
 export default function ReportsScreen() {
   const { t } = useLanguage();
   const { products, fetchProducts } = useProducts();
   const { customers, fetchCustomers } = useCustomers();
-  const { sales, getTotalSales, fetchSales } = useSales();
+  const { sales, fetchSales } = useSales();
+  const { losses, fetchLosses } = useLosses();
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
   const [refreshing, setRefreshing] = useState(false);
   const [profitLoss, setProfitLoss] = useState({
@@ -20,6 +23,7 @@ export default function ReportsScreen() {
     cost: 0,
     profit: 0,
     margin: 0,
+    losses: 0,
   });
   const { width } = useWindowDimensions();
 
@@ -28,7 +32,8 @@ export default function ReportsScreen() {
     await Promise.all([
       fetchProducts(),
       fetchCustomers(),
-      fetchSales()
+      fetchSales(),
+      fetchLosses()
     ]);
     setRefreshing(false);
   };
@@ -63,14 +68,18 @@ export default function ReportsScreen() {
   useEffect(() => {
     const calculateProfitLoss = async () => {
       const { startDate, endDate } = getDateRange(selectedPeriod);
-      const totalRevenue = getTotalSales(startDate, endDate);
+      const periodSales = sales.filter(sale => {
+        const createdAt = new Date(sale.created_at);
+        return createdAt >= startDate && createdAt <= endDate;
+      });
+      const totalRevenue = periodSales.reduce((total, sale) => total + sale.total, 0);
 
-      // Calculate actual cost of goods sold by joining sale_items with products
+      // Use the cost captured at checkout so later price changes do not rewrite history.
       const { data: saleItemsWithProducts, error } = await supabase
         .from('sale_items')
         .select(`
           quantity,
-          products!inner(buying_price),
+          buying_price,
           sales!inner(created_at)
         `)
         .gte('sales.created_at', startDate.toISOString())
@@ -78,31 +87,33 @@ export default function ReportsScreen() {
 
       if (error) {
         console.error('Error fetching sale items with products:', error);
-        setProfitLoss({
-          revenue: totalRevenue,
-          cost: 0,
-          profit: totalRevenue,
-          margin: 100,
-        });
+        setProfitLoss({ revenue: totalRevenue, cost: 0, profit: 0, margin: 0, losses: 0 });
         return;
       }
 
       const totalCost = (saleItemsWithProducts || []).reduce((total: number, item: any) =>
-        total + (item.products.buying_price * item.quantity), 0
+        total + lineTotal(Number(item.buying_price), Number(item.quantity)), 0
       );
 
-      const profit = totalRevenue - totalCost;
+      const periodLosses = losses
+        .filter(loss => {
+          const createdAt = new Date(loss.created_at);
+          return createdAt >= startDate && createdAt <= endDate;
+        })
+        .reduce((total, loss) => total + loss.lossValue, 0);
+      const profit = grossProfit(totalRevenue, totalCost + periodLosses);
 
       setProfitLoss({
         revenue: totalRevenue,
         cost: totalCost,
         profit,
-        margin: totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0,
+        margin: grossMarginPercentage(totalRevenue, totalCost + periodLosses),
+        losses: periodLosses,
       });
     };
 
     calculateProfitLoss();
-  }, [sales, getTotalSales, selectedPeriod]);
+  }, [sales, losses, selectedPeriod]);
 
   const getInventoryValue = () => {
     return {
@@ -121,7 +132,13 @@ export default function ReportsScreen() {
     const productSales: { [key: string]: number } = {};
 
     // Aggregate sales by product
-    sales.forEach(sale => {
+    const { startDate, endDate } = getDateRange(selectedPeriod);
+    sales
+      .filter(sale => {
+        const createdAt = new Date(sale.created_at);
+        return createdAt >= startDate && createdAt <= endDate;
+      })
+      .forEach(sale => {
       sale.items.forEach(item => {
         if (productSales[item.productId]) {
           productSales[item.productId] += item.quantity;
@@ -244,6 +261,9 @@ export default function ReportsScreen() {
               {t('cost')}: {formatCurrency(profitLoss.cost)}
             </Text>
             <Text style={styles.financialDetail}>
+              {t('lossInformation')}: {formatCurrency(profitLoss.losses)}
+            </Text>
+            <Text style={styles.financialDetail}>
               {t('profitMargin')}: {profitLoss.margin.toFixed(2)}%
             </Text>
           </View>
@@ -256,8 +276,6 @@ export default function ReportsScreen() {
             title={t('totalSales')}
             value={formatCurrency(profitLoss.revenue)}
             icon={<DollarSign size={24} color="#2563EB" />}
-            trend="up"
-            trendValue={8.5}
           />
           <StatCard
             title={t('inventoryValue')}
@@ -273,8 +291,6 @@ export default function ReportsScreen() {
             title={t('activeCustomers')}
             value={customers.length.toString()}
             icon={<Users size={24} color="#16A34A" />}
-            trend="up"
-            trendValue={12.3}
             color="#16A34A"
           />
           <StatCard
@@ -376,7 +392,9 @@ export default function ReportsScreen() {
   );
 }
 
-const createStyles = (width: number) => StyleSheet.create({
+const createStyles = (viewportWidth: number) => {
+  const width = Math.min(Math.max(viewportWidth, 320), 480);
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
@@ -386,7 +404,7 @@ const createStyles = (width: number) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: width * 0.04,
-    paddingTop: width * 0.15,
+    paddingTop: width * 0.04,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
@@ -676,4 +694,5 @@ const createStyles = (width: number) => StyleSheet.create({
     fontWeight: 'bold',
     color: '#DC2626',
   },
-});
+  });
+};

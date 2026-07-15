@@ -148,6 +148,7 @@ export default function TabLayout() {
           },
           tabBarActiveTintColor: '#2563EB',
           tabBarInactiveTintColor: '#6B7280',
+          tabBarShowLabel: width >= 390,
           tabBarStyle: {
             backgroundColor: '#FFFFFF',
             borderTopWidth: 1,

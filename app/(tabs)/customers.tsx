@@ -4,6 +4,7 @@ import { Users, Plus, Search, CreditCard as Edit, Trash2, CreditCard, DollarSign
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useCustomers } from '../../hooks/useCustomers';
+import { roundMoney } from '../../utils/calculations';
 
 export default function CustomersScreen() {
   const { t } = useLanguage();
@@ -16,6 +17,7 @@ export default function CustomersScreen() {
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [loanAmount, setLoanAmount] = useState<number>(0);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [loanAction, setLoanAction] = useState<'add' | 'pay'>('add');
   const [refreshing, setRefreshing] = useState(false);
   const [newCustomer, setNewCustomer] = useState({
     name: '',
@@ -41,16 +43,19 @@ export default function CustomersScreen() {
     customer.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSaveCustomer = () => {
+  const handleSaveCustomer = async () => {
     if (!newCustomer.name || !newCustomer.phone) {
       Alert.alert(t('error'), t('fillAllFields'));
       return;
     }
 
-    if (editingCustomer) {
-      updateCustomer(editingCustomer.id, newCustomer);
-    } else {
-      addCustomer(newCustomer);
+    const saved = editingCustomer
+      ? await updateCustomer(editingCustomer.id, newCustomer)
+      : await addCustomer(newCustomer);
+
+    if (!saved) {
+      Alert.alert(t('error'), 'Customer could not be saved.');
+      return;
     }
 
     resetForm();
@@ -93,23 +98,31 @@ export default function CustomersScreen() {
     setSelectedCustomer(customer);
     setLoanAmount(0);
     setPaymentAmount(0);
+    setLoanAction(type);
     setShowLoanModal(true);
   };
 
-  const handleLoanSubmit = () => {
+  const handleLoanSubmit = async () => {
     if (!selectedCustomer) return;
+    const amount = loanAction === 'add' ? loanAmount : paymentAmount;
+    if (amount <= 0) {
+      Alert.alert(t('error'), 'Enter an amount greater than zero.');
+      return;
+    }
 
-    if (loanAmount > 0) {
-      addLoan(selectedCustomer.id, loanAmount);
+    if (loanAction === 'add' && loanAmount > 0) {
+      const result = await addLoan(selectedCustomer.id, loanAmount);
+      if (result === null) { Alert.alert(t('error'), 'Loan could not be recorded.'); return; }
       Alert.alert(t('success'), `Loan of ${formatCurrency(loanAmount)} added`);
     }
 
-    if (paymentAmount > 0) {
+    if (loanAction === 'pay' && paymentAmount > 0) {
       if (paymentAmount > selectedCustomer.loanBalance) {
         Alert.alert(t('error'), 'Payment amount exceeds loan balance');
         return;
       }
-      payLoan(selectedCustomer.id, paymentAmount);
+      const result = await payLoan(selectedCustomer.id, paymentAmount);
+      if (result === null) { Alert.alert(t('error'), 'Payment could not be recorded.'); return; }
       Alert.alert(t('success'), `Payment of ${formatCurrency(paymentAmount)} recorded`);
     }
 
@@ -354,29 +367,29 @@ export default function CustomersScreen() {
                   </Text>
                 </View>
 
-                <View style={styles.inputGroup}>
+                {loanAction === 'add' && <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Add Loan Amount (TSH)</Text>
                   <TextInput
                     style={styles.textInput}
                     value={loanAmount.toString()}
-                    onChangeText={(text) => setLoanAmount(Number(text) || 0)}
+                    onChangeText={(text) => setLoanAmount(roundMoney(Number(text.replace(/[^0-9]/g, ''))))}
                     placeholder="0"
                     keyboardType="numeric"
                     placeholderTextColor="#9CA3AF"
                   />
-                </View>
+                </View>}
 
-                <View style={styles.inputGroup}>
+                {loanAction === 'pay' && <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Payment Amount (TSH)</Text>
                   <TextInput
                     style={styles.textInput}
                     value={paymentAmount.toString()}
-                    onChangeText={(text) => setPaymentAmount(Number(text) || 0)}
+                    onChangeText={(text) => setPaymentAmount(roundMoney(Number(text.replace(/[^0-9]/g, ''))))}
                     placeholder="0"
                     keyboardType="numeric"
                     placeholderTextColor="#9CA3AF"
                   />
-                </View>
+                </View>}
 
                 {(loanAmount > 0 || paymentAmount > 0) && (
                   <View style={styles.loanCalculation}>
@@ -398,7 +411,9 @@ export default function CustomersScreen() {
   );
 }
 
-const createStyles = (width: number) => StyleSheet.create({
+const createStyles = (viewportWidth: number) => {
+  const width = Math.min(Math.max(viewportWidth, 320), 480);
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
@@ -408,7 +423,7 @@ const createStyles = (width: number) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: width * 0.03,
-    paddingTop: width * 0.12,
+    paddingTop: width * 0.03,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
@@ -708,4 +723,5 @@ const createStyles = (width: number) => StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
   },
-});
+  });
+};

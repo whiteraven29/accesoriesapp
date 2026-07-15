@@ -22,21 +22,8 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      // First, get the user's email from their username
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('email')
-        .eq('username', username)
-        .single();
-
-      if (profileError || !profile) {
-        Alert.alert(t('error'), 'Invalid username or password');
-        setLoading(false);
-        return;
-      }
-
       const { error } = await supabase.auth.signInWithPassword({
-        email: profile.email,
+        email: username.trim().toLowerCase(),
         password,
       });
 
@@ -63,12 +50,13 @@ export default function LoginScreen() {
 
       <View style={styles.form}>
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Username</Text>
+          <Text style={styles.inputLabel}>Email</Text>
           <TextInput
             style={styles.textInput}
             value={username}
             onChangeText={setUsername}
-            placeholder="Enter your username"
+            placeholder="Enter your email"
+            keyboardType="email-address"
             autoCapitalize="none"
             placeholderTextColor="#9CA3AF"
           />
@@ -130,7 +118,9 @@ export default function LoginScreen() {
   );
 }
 
-const createStyles = (width: number) => StyleSheet.create({
+const createStyles = (viewportWidth: number) => {
+  const width = Math.min(Math.max(viewportWidth, 320), 480);
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
@@ -153,6 +143,8 @@ const createStyles = (width: number) => StyleSheet.create({
   },
   form: {
     width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
   },
   inputGroup: {
     marginBottom: width * 0.05,
@@ -216,4 +208,5 @@ const createStyles = (width: number) => StyleSheet.create({
     color: '#2563EB',
     fontWeight: '600',
   },
-});
+  });
+};

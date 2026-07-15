@@ -34,6 +34,8 @@ export function useProducts() {
         (payload) => {
           const newProduct = {
             ...payload.new,
+            brand: payload.new.brand ?? '',
+            category: payload.new.category ?? '',
             buyingPrice: payload.new.buying_price,
             sellingPrice: payload.new.selling_price,
             lowStockAlert: payload.new.low_stock_alert,
@@ -51,6 +53,8 @@ export function useProducts() {
         (payload) => {
           const updatedProduct = {
             ...payload.new,
+            brand: payload.new.brand ?? '',
+            category: payload.new.category ?? '',
             buyingPrice: payload.new.buying_price,
             sellingPrice: payload.new.selling_price,
             lowStockAlert: payload.new.low_stock_alert,
@@ -94,8 +98,10 @@ export function useProducts() {
     // Map database fields to interface fields
     const mappedProducts = (data || []).map(product => ({
       ...product,
-      buyingPrice: product.buying_price,
-      sellingPrice: product.selling_price,
+      brand: product.brand ?? '',
+      category: product.category ?? '',
+      buyingPrice: Number(product.buying_price),
+      sellingPrice: Number(product.selling_price),
       lowStockAlert: product.low_stock_alert,
     }));
 

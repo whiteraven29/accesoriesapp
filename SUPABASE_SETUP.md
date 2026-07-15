@@ -33,6 +33,10 @@ EXPO_PUBLIC_SUPABASE_URL=your_project_url_here
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 ```
 
+Use the public **anon/publishable** key, never the `service_role` or secret key. Add the
+same two variables in Netlify under **Site configuration → Environment variables**, then
+trigger a new deploy. Expo embeds `EXPO_PUBLIC_*` values at build time.
+
 ## 4. Enable Authentication
 
 In your Supabase dashboard:
@@ -40,8 +44,9 @@ In your Supabase dashboard:
 1. Click on "Authentication" in the left sidebar
 2. Go to "Settings" tab
 3. Configure your authentication settings:
-   - **Site URL**: Add your app's URL (e.g., `exp://localhost:8081` for development)
-   - **Redirect URLs**: Add your app's URL for OAuth redirects
+   - **Site URL**: your production Netlify URL
+   - **Redirect URLs**: add `http://localhost:8081/**`, your Netlify URL with `/**`, and
+     `alexapp://**` for native password recovery
 4. Go to "Providers" and enable the authentication providers you want (Email is enabled by default)
 
 ## 5. Create Database Tables
@@ -82,6 +87,9 @@ After running the schema:
 1. Check that all tables were created successfully in the "Table Editor"
 2. Verify that RLS is enabled on all tables
 3. Test user registration and login in your app
+
+The login form uses email and password. Usernames remain display/profile information and
+are not exposed through an anonymous database policy.
 
 ## 7. Data Security Features
 

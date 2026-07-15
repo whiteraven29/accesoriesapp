@@ -34,7 +34,12 @@ export function useLosses() {
           table: 'losses',
         },
         (payload) => {
-          setLosses((prev) => [...prev, payload.new as Loss]);
+          const loss = {
+            ...payload.new,
+            productId: payload.new.product_id,
+            lossValue: Number(payload.new.loss_value),
+          } as Loss;
+          setLosses((prev) => [loss, ...prev]);
         }
       )
       .on(
@@ -47,7 +52,11 @@ export function useLosses() {
         (payload) => {
           setLosses((prev) =>
             prev.map((loss) =>
-              loss.id === payload.new.id ? (payload.new as Loss) : loss
+              loss.id === payload.new.id ? ({
+                ...payload.new,
+                productId: payload.new.product_id,
+                lossValue: Number(payload.new.loss_value),
+              } as Loss) : loss
             )
           );
         }
@@ -88,7 +97,7 @@ export function useLosses() {
     const mappedLosses = (data || []).map(loss => ({
       ...loss,
       productId: loss.product_id,
-      lossValue: loss.loss_value,
+      lossValue: Number(loss.loss_value),
     }));
 
     setLosses(mappedLosses);

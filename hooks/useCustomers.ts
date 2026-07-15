@@ -41,6 +41,9 @@ export function useCustomers() {
         (payload) => {
           const newCustomer = {
             ...payload.new,
+            phone: payload.new.phone ?? '',
+            email: payload.new.email ?? '',
+            address: payload.new.address ?? '',
             loyaltyPoints: payload.new.loyalty_points || 0,
             loanBalance: payload.new.loan_balance || 0,
           };
@@ -57,6 +60,9 @@ export function useCustomers() {
         (payload) => {
           const updatedCustomer = {
             ...payload.new,
+            phone: payload.new.phone ?? '',
+            email: payload.new.email ?? '',
+            address: payload.new.address ?? '',
             loyaltyPoints: payload.new.loyalty_points || 0,
             loanBalance: payload.new.loan_balance || 0,
           };
@@ -99,6 +105,9 @@ export function useCustomers() {
     // Map database fields to interface fields
     const mappedCustomers = (data || []).map(customer => ({
       ...customer,
+      phone: customer.phone ?? '',
+      email: customer.email ?? '',
+      address: customer.address ?? '',
       loyaltyPoints: customer.loyalty_points || 0,
       loanBalance: customer.loan_balance || 0,
     }));
@@ -182,123 +191,21 @@ export function useCustomers() {
   };
 
   const addLoan = async (customerId: string, amount: number, description?: string) => {
-    // First, get the current customer to get their current loan balance
-    const { data: customer, error: customerError } = await supabase
-      .from('customers')
-      .select('loan_balance')
-      .eq('id', customerId)
-      .single();
-
-    if (customerError) {
-      console.error('Error fetching customer:', customerError);
-      return null;
-    }
-
-    // Update customer's loan balance
-    const newLoanBalance = customer.loan_balance + amount;
-    const { data: updatedCustomer, error: updateError } = await supabase
-      .from('customers')
-      .update({ loan_balance: newLoanBalance })
-      .eq('id', customerId)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error('Error updating customer loan balance:', updateError);
-      return null;
-    }
-
-    // Map the updated customer data
-    const mappedCustomer = {
-      ...updatedCustomer,
-      loyaltyPoints: updatedCustomer.loyalty_points || 0,
-      loanBalance: updatedCustomer.loan_balance || 0,
-    };
-
-    // Add loan transaction record
-    const { data: user } = await supabase.auth.getUser();
-    if (!user.user) return null;
-
-    const { data: transaction, error: transactionError } = await supabase
-      .from('customer_loan_history')
-      .insert([
-        {
-          user_id: user.user.id,
-          customer_id: customerId,
-          type: 'loan',
-          amount: amount,
-          description: description,
-        },
-      ])
-      .select()
-      .single();
-
-    if (transactionError) {
-      console.error('Error adding loan transaction:', transactionError);
-      return null;
-    }
-
-    return { customer: mappedCustomer, transaction };
+    const { data, error } = await supabase.rpc('adjust_customer_loan', {
+      p_customer_id: customerId, p_type: 'loan', p_amount: amount, p_description: description ?? null,
+    });
+    if (error) { console.error('Error adding loan:', error); return null; }
+    await fetchCustomers();
+    return data;
   };
 
   const payLoan = async (customerId: string, amount: number, description?: string) => {
-    // First, get the current customer to get their current loan balance
-    const { data: customer, error: customerError } = await supabase
-      .from('customers')
-      .select('loan_balance')
-      .eq('id', customerId)
-      .single();
-
-    if (customerError) {
-      console.error('Error fetching customer:', customerError);
-      return null;
-    }
-
-    // Update customer's loan balance (can't go below 0)
-    const newLoanBalance = Math.max(0, customer.loan_balance - amount);
-    const { data: updatedCustomer, error: updateError } = await supabase
-      .from('customers')
-      .update({ loan_balance: newLoanBalance })
-      .eq('id', customerId)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error('Error updating customer loan balance:', updateError);
-      return null;
-    }
-
-    // Map the updated customer data
-    const mappedCustomer = {
-      ...updatedCustomer,
-      loyaltyPoints: updatedCustomer.loyalty_points || 0,
-      loanBalance: updatedCustomer.loan_balance || 0,
-    };
-
-    // Add payment transaction record
-    const { data: user } = await supabase.auth.getUser();
-    if (!user.user) return null;
-
-    const { data: transaction, error: transactionError } = await supabase
-      .from('customer_loan_history')
-      .insert([
-        {
-          user_id: user.user.id,
-          customer_id: customerId,
-          type: 'payment',
-          amount: amount,
-          description: description,
-        },
-      ])
-      .select()
-      .single();
-
-    if (transactionError) {
-      console.error('Error adding payment transaction:', transactionError);
-      return null;
-    }
-
-    return { customer: mappedCustomer, transaction };
+    const { data, error } = await supabase.rpc('adjust_customer_loan', {
+      p_customer_id: customerId, p_type: 'payment', p_amount: amount, p_description: description ?? null,
+    });
+    if (error) { console.error('Error recording payment:', error); return null; }
+    await fetchCustomers();
+    return data;
   };
 
   const addLoyaltyPoints = async (customerId: string, points: number) => {
