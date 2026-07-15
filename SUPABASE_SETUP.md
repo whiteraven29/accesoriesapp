@@ -4,6 +4,9 @@ This guide will help you set up Supabase for your React Native Expo application 
 
 ## 1. Create a Supabase Project
 
+Before running Expo or Netlify CLI commands locally, use Node 22. The repository includes
+`.nvmrc` and `.node-version` pins. With nvm, run `nvm install 22 && nvm use 22`.
+
 1. Go to [https://supabase.com](https://supabase.com) and sign up or log in to your account
 2. Click on "New Project"
 3. Enter your project details:
