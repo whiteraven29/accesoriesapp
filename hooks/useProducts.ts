@@ -40,7 +40,9 @@ export function useProducts() {
             sellingPrice: payload.new.selling_price,
             lowStockAlert: payload.new.low_stock_alert,
           };
-          setProducts((prev) => [...prev, newProduct as Product]);
+          setProducts((prev) => prev.some(product => product.id === payload.new.id)
+            ? prev
+            : [newProduct as Product, ...prev]);
         }
       )
       .on(

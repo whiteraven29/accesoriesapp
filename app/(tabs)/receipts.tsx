@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal,
 import { Receipt, Download, Search, Calendar, RefreshCw } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useSales, Sale } from '../../hooks/useSales';

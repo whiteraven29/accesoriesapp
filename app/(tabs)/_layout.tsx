@@ -3,6 +3,7 @@ import { View, TouchableOpacity, useWindowDimensions, Platform } from 'react-nat
 import { Chrome as Home, Package, ShoppingCart, Users, ChartBar as BarChart3, Receipt, Languages } from 'lucide-react-native';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { useMemo } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Define screen size breakpoints
 const BREAKPOINTS = {
@@ -23,6 +24,7 @@ const getDeviceType = (width: number) => {
 export default function TabLayout() {
   const { toggleLanguage, t } = useLanguage();
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
   const deviceType = getDeviceType(width);
   
@@ -153,9 +155,9 @@ export default function TabLayout() {
             backgroundColor: '#FFFFFF',
             borderTopWidth: 1,
             borderTopColor: '#E5E7EB',
-            paddingBottom: responsiveStyles.tabBarPaddingVertical,
+            paddingBottom: responsiveStyles.tabBarPaddingVertical + insets.bottom,
             paddingTop: responsiveStyles.tabBarPaddingVertical,
-            height: responsiveStyles.tabBarHeight,
+            height: responsiveStyles.tabBarHeight + insets.bottom,
             paddingHorizontal: responsiveStyles.tabBarHorizontalPadding,
             position: 'relative',
             shadowColor: '#000',
@@ -163,10 +165,6 @@ export default function TabLayout() {
             shadowOpacity: 0.1,
             shadowRadius: 4,
             elevation: isWeb ? 8 : 4,
-            // Add safe area handling for mobile devices
-            ...(Platform.OS === 'ios' && deviceType === 'mobile' && {
-              paddingBottom: responsiveStyles.tabBarPaddingVertical + (width > height ? 0 : 20), // Add bottom padding for home indicator
-            }),
           },
           tabBarLabelStyle: {
             fontSize: responsiveStyles.tabBarLabelSize,

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal,
 import { ShoppingCart, Plus, Minus, Trash2, Calculator, Users, CreditCard, RefreshCw, Download } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
@@ -33,7 +33,7 @@ interface Product {
 
 export default function SalesScreen() {
   const { t } = useLanguage();
-  const { products, fetchProducts } = useProducts();
+  const { products, addProduct, fetchProducts } = useProducts();
   const { addSale, fetchSales } = useSales();
   const { customers } = useCustomers();
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -46,12 +46,17 @@ export default function SalesScreen() {
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [showQuickProductModal, setShowQuickProductModal] = useState(false);
   const [currentSale, setCurrentSale] = useState<Sale | null>(null);
   const [receiptSignature, setReceiptSignature] = useState('');
   const [receiptDescription, setReceiptDescription] = useState('');
   const [userProfile, setUserProfile] = useState<{username: string, shop_name: string} | null>(null);
   const [currentItem, setCurrentItem] = useState<CartItem | null>(null);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
+  const [quickProduct, setQuickProduct] = useState({
+    name: '', brand: '', category: 'Accessories', buyingPrice: 0,
+    sellingPrice: 0, pieces: 1, lowStockAlert: 1, imei: '',
+  });
   const { width } = useWindowDimensions();
   const styles = createStyles(width);
 
@@ -177,6 +182,41 @@ export default function SalesScreen() {
     // Set cash received to total amount by default
     setCashReceived(getCashDue());
     setShowCheckout(true);
+  };
+
+  const saveQuickProduct = async () => {
+    if (!quickProduct.name.trim() || !quickProduct.brand.trim() || !quickProduct.category.trim()) {
+      Alert.alert(t('error'), 'Enter the product name, brand, and category.');
+      return;
+    }
+    if (quickProduct.sellingPrice < 0 || quickProduct.buyingPrice < 0 || quickProduct.pieces < 1) {
+      Alert.alert(t('error'), 'Enter valid prices and at least one item in stock.');
+      return;
+    }
+    if (quickProduct.category === 'Phones' && !quickProduct.imei.trim()) {
+      Alert.alert(t('error'), 'IMEI is required for phones.');
+      return;
+    }
+
+    const saved = await addProduct({
+      ...quickProduct,
+      name: quickProduct.name.trim(),
+      brand: quickProduct.brand.trim(),
+      category: quickProduct.category.trim(),
+      imei: quickProduct.imei.trim() || undefined,
+    });
+    if (!saved) {
+      Alert.alert(t('error'), 'Product could not be saved.');
+      return;
+    }
+
+    await fetchProducts();
+    setCart(prev => [...prev, { productId: saved.id, quantity: 1 }]);
+    setQuickProduct({
+      name: '', brand: '', category: 'Accessories', buyingPrice: 0,
+      sellingPrice: 0, pieces: 1, lowStockAlert: 1, imei: '',
+    });
+    setShowQuickProductModal(false);
   };
 
   const completeSale = async () => {
@@ -497,13 +537,19 @@ export default function SalesScreen() {
         )}
       </View>
 
-      <TextInput
-        style={styles.searchInput}
-        placeholder={t('searchProducts')}
-        value={searchTerm}
-        onChangeText={setSearchTerm}
-        placeholderTextColor="#9CA3AF"
-      />
+      <View style={styles.searchActions}>
+        <TextInput
+          style={[styles.searchInput, styles.searchInputInline]}
+          placeholder={t('searchProducts')}
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          placeholderTextColor="#9CA3AF"
+        />
+        <TouchableOpacity style={styles.quickAddButton} onPress={() => setShowQuickProductModal(true)}>
+          <Plus size={20} color="#FFFFFF" />
+          <Text style={styles.quickAddButtonText}>New product</Text>
+        </TouchableOpacity>
+      </View>
 
       <ScrollView
         style={styles.productsList}
@@ -518,6 +564,58 @@ export default function SalesScreen() {
       </ScrollView>
 
       <CartSummary />
+
+      <Modal visible={showQuickProductModal} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowQuickProductModal(false)}>
+              <Text style={styles.cancelButton}>{t('cancel')}</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>New product</Text>
+            <TouchableOpacity onPress={saveQuickProduct}>
+              <Text style={styles.saveButton}>Save & add</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalContent} keyboardShouldPersistTaps="handled">
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Product name *</Text>
+              <TextInput style={styles.textInput} value={quickProduct.name} onChangeText={name => setQuickProduct(p => ({ ...p, name }))} placeholder="Product name" />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Brand *</Text>
+              <TextInput style={styles.textInput} value={quickProduct.brand} onChangeText={brand => setQuickProduct(p => ({ ...p, brand }))} placeholder="Brand" />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Category *</Text>
+              <View style={styles.quickCategories}>
+                {['Accessories', 'Phones'].map(category => (
+                  <TouchableOpacity key={category} style={[styles.quickCategory, quickProduct.category === category && styles.quickCategoryActive]} onPress={() => setQuickProduct(p => ({ ...p, category }))}>
+                    <Text style={[styles.quickCategoryText, quickProduct.category === category && styles.quickCategoryTextActive]}>{category}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            {quickProduct.category === 'Phones' && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>IMEI *</Text>
+                <TextInput style={styles.textInput} value={quickProduct.imei} onChangeText={imei => setQuickProduct(p => ({ ...p, imei }))} placeholder="IMEI" keyboardType="numeric" />
+              </View>
+            )}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Buying price (TSH) *</Text>
+              <TextInput style={styles.textInput} value={quickProduct.buyingPrice.toString()} onChangeText={text => setQuickProduct(p => ({ ...p, buyingPrice: roundMoney(Number(text.replace(/[^0-9]/g, ''))) }))} keyboardType="numeric" />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Selling price (TSH) *</Text>
+              <TextInput style={styles.textInput} value={quickProduct.sellingPrice.toString()} onChangeText={text => setQuickProduct(p => ({ ...p, sellingPrice: roundMoney(Number(text.replace(/[^0-9]/g, ''))) }))} keyboardType="numeric" />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Stock quantity *</Text>
+              <TextInput style={styles.textInput} value={quickProduct.pieces.toString()} onChangeText={text => setQuickProduct(p => ({ ...p, pieces: Math.max(0, Math.trunc(Number(text.replace(/[^0-9]/g, '')) || 0)) }))} keyboardType="numeric" />
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
 
       <Modal visible={showCheckout} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modalContainer}>
@@ -879,6 +977,55 @@ const createStyles = (viewportWidth: number) => {
     borderColor: '#E5E7EB',
     fontSize: width * 0.04,
     color: '#111827',
+  },
+  searchActions: {
+    flexDirection: viewportWidth < 600 ? 'column' : 'row',
+    alignItems: 'stretch',
+    gap: width * 0.02,
+    marginHorizontal: width * 0.03,
+    marginBottom: width * 0.02,
+  },
+  searchInputInline: {
+    flex: 1,
+    margin: 0,
+  },
+  quickAddButton: {
+    minHeight: 48,
+    paddingHorizontal: width * 0.04,
+    borderRadius: width * 0.025,
+    backgroundColor: '#16A34A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  quickAddButtonText: {
+    color: '#FFFFFF',
+    fontSize: width * 0.035,
+    fontWeight: '700',
+  },
+  quickCategories: {
+    flexDirection: 'row',
+    gap: width * 0.02,
+  },
+  quickCategory: {
+    flex: 1,
+    padding: width * 0.03,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: width * 0.025,
+    alignItems: 'center',
+  },
+  quickCategoryActive: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#2563EB',
+  },
+  quickCategoryText: {
+    color: '#374151',
+    fontWeight: '600',
+  },
+  quickCategoryTextActive: {
+    color: '#1D4ED8',
   },
   productsList: {
     flex: 1,

@@ -110,7 +110,7 @@ export default function LoginScreen() {
           onPress={() => router.replace('/auth/signup')}
         >
           <Text style={styles.linkText}>
-            Don't have an account? <Text style={styles.linkTextBold}>Sign Up</Text>
+            Don&apos;t have an account? <Text style={styles.linkTextBold}>Sign Up</Text>
           </Text>
         </TouchableOpacity>
       </View>

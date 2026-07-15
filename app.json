@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "alexapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.alexapp.inventory"
@@ -17,8 +17,7 @@
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.alexapp.inventory",
-      "edgeToEdgeEnabled": false
+      "package": "com.alexapp.inventory"
     },
     "web": {
       "bundler": "metro",

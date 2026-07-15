@@ -58,26 +58,8 @@ export default function SignupScreen() {
       }
 
       if (authData.user) {
-        // Use upsert instead of insert to handle potential duplicates
-        const { error: profileError } = await supabase
-          .from('user_profiles')
-          .upsert({
-            id: authData.user.id,
-            username: username,
-            full_name: fullName,
-            email: email,
-            phone: phone || null,
-            shop_name: shopName,
-          }, {
-            onConflict: 'id' // Specify the conflict target
-          });
-
-        if (profileError) {
-          console.warn('Profile warning:', profileError.message);
-          // Don't fail the signup if there's a profile issue
-          // The trigger should have already created the profile
-        }
-
+        // The database trigger creates the profile even when email confirmation
+        // means the new user does not have an authenticated session yet.
         Alert.alert(
           'Success', 
           'Account created successfully! Please check your email to verify your account.'
