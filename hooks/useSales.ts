@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../utils/supabase';
 
 export interface SaleItem {
@@ -8,6 +8,9 @@ export interface SaleItem {
   quantity: number;
   price: number;
   buyingPrice: number;
+  productName?: string;
+  productBrand?: string;
+  productImei?: string;
   created_at: string;
 }
 
@@ -30,6 +33,9 @@ const mapSaleItem = (item: any): SaleItem => ({
   quantity: Number(item.quantity),
   price: Number(item.price),
   buyingPrice: Number(item.buying_price),
+  productName: (Array.isArray(item.product) ? item.product[0]?.name : item.product?.name) ?? undefined,
+  productBrand: (Array.isArray(item.product) ? item.product[0]?.brand : item.product?.brand) ?? undefined,
+  productImei: (Array.isArray(item.product) ? item.product[0]?.imei : item.product?.imei) ?? undefined,
   created_at: item.created_at,
 });
 
@@ -107,8 +113,8 @@ export function useSales() {
     };
   }, []);
 
-  const fetchSales = async () => {
-    const { data, error } = await supabase
+  const fetchSales = useCallback(async () => {
+    const { data: saleRows, error } = await supabase
       .from('sales')
       .select('*')
       .order('created_at', { ascending: false });
@@ -118,32 +124,28 @@ export function useSales() {
       return;
     }
 
-    // Fetch items for each sale
-    const salesWithItems = await Promise.all(
-      (data || []).map(async (sale) => {
-        const items = await fetchSaleItems(sale.id);
-        return mapSale(sale, items);
-      })
-    );
+    if (!saleRows?.length) { setSales([]); return; }
 
-    setSales(salesWithItems);
-  };
-
-  const fetchSaleItems = async (saleId: string) => {
-    const { data, error } = await supabase
+    const { data: itemRows, error: itemError } = await supabase
       .from('sale_items')
-      .select('*')
-      .eq('sale_id', saleId);
+      .select('*, product:products(name, brand, imei)')
+      .in('sale_id', saleRows.map(sale => sale.id));
 
-    if (error) {
-      console.error('Error fetching sale items:', error);
-      return [];
+    if (itemError) console.error('Error fetching receipt items:', itemError);
+    const itemsBySale = new Map<string, SaleItem[]>();
+    for (const row of itemRows || []) {
+      const item = mapSaleItem(row);
+      const current = itemsBySale.get(item.saleId) || [];
+      current.push(item);
+      itemsBySale.set(item.saleId, current);
     }
 
-    return (data || []).map(mapSaleItem);
-  };
+    const salesWithItems = saleRows.map(sale => mapSale(sale, itemsBySale.get(sale.id) || []));
 
-  const fetchSaleWithItems = async (saleId: string) => {
+    setSales(salesWithItems);
+  }, []);
+
+  const fetchSaleWithItems = useCallback(async (saleId: string) => {
     const { data: sale, error: saleError } = await supabase
       .from('sales')
       .select('*')
@@ -155,9 +157,14 @@ export function useSales() {
       return null;
     }
 
-    const items = await fetchSaleItems(saleId);
-    return mapSale(sale, items);
-  };
+    const { data: items, error: itemError } = await supabase
+      .from('sale_items')
+      .select('*, product:products(name, brand, imei)')
+      .eq('sale_id', saleId);
+
+    if (itemError) console.error('Error fetching receipt items:', itemError);
+    return mapSale(sale, (items || []).map(mapSaleItem));
+  }, []);
 
   const addSale = async (
     saleData: Omit<Sale, 'id' | 'created_at' | 'items'>,
@@ -174,6 +181,7 @@ export function useSales() {
       p_items: items,
       p_customer_id: customerId ?? null,
       p_loan_amount: loanAmount,
+      p_customer_name: saleData.customer_name ?? null,
     });
 
     if (error || !saleId) {

@@ -1,46 +1,41 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions } from 'react-native';
-import { Receipt, Download, Search, Calendar, RefreshCw } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions, Platform } from 'react-native';
+import { Receipt, Download, RefreshCw, Share2 } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useSales, Sale } from '../../hooks/useSales';
-import { useProducts } from '../../hooks/useProducts';
 import { supabase } from '../../utils/supabase';
+import { useLanguage } from '../../hooks/LanguageContext';
+import { useFocusEffect } from 'expo-router';
 
 export default function ReceiptsScreen() {
   const { t } = useLanguage();
   const { sales, fetchSales, updateSale } = useSales();
-  const { products, fetchProducts } = useProducts();
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
-  // Debug modal state changes
-  useEffect(() => {
-    console.log('Modal visibility changed:', showReceiptModal);
-  }, [showReceiptModal]);
   const [selectedReceipt, setSelectedReceipt] = useState<Sale | null>(null);
   const [pressedReceiptId, setPressedReceiptId] = useState<string | null>(null);
   const [receiptSignature, setReceiptSignature] = useState('');
   const [receiptDescription, setReceiptDescription] = useState('');
   const [customerName, setCustomerName] = useState('');
-  const [userProfile, setUserProfile] = useState<{username: string, shop_name: string, shop_logo?: string} | null>(null);
+  const [userProfile, setUserProfile] = useState<{username: string, shop_name: string} | null>(null);
   const { width } = useWindowDimensions();
   const styles = createStyles(width);
 
-  useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+  useEffect(() => { fetchUserProfile(); }, []);
+  useFocusEffect(useCallback(() => {
+    fetchSales();
+  }, [fetchSales]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchSales();
-    await fetchProducts();
+    await Promise.all([fetchSales(), fetchUserProfile()]);
     setRefreshing(false);
-  }, [fetchSales, fetchProducts]);
+  }, [fetchSales]);
 
   const filteredReceipts = sales.filter(receipt => {
     if (!searchTerm) return true;
@@ -58,7 +53,7 @@ export default function ReceiptsScreen() {
       if (user) {
         const { data: profile, error } = await supabase
           .from('user_profiles')
-          .select('username, shop_name, shop_logo')
+          .select('username, shop_name')
           .eq('id', user.id)
           .single();
 
@@ -72,30 +67,25 @@ export default function ReceiptsScreen() {
   };
 
   const viewReceipt = async (receipt: Sale) => {
-    console.log('Viewing receipt:', receipt.id);
     setSelectedReceipt(receipt);
     setCustomerName(receipt.customer_name || '');
     setReceiptSignature(receipt.signature || '');
     setReceiptDescription(receipt.description || '');
-    await fetchUserProfile();
     setShowReceiptModal(true);
-    console.log('Modal should be visible now');
   };
 
-  const generateReceiptHTML = (sale: Sale, userProfile: {username: string, shop_name: string, shop_logo?: string} | null) => {
+  const generateReceiptHTML = (sale: Sale, userProfile: {username: string, shop_name: string} | null) => {
     const date = new Date(sale.created_at).toLocaleDateString();
     const time = new Date(sale.created_at).toLocaleTimeString();
     const shopName = userProfile?.shop_name || 'Phone Shop POS';
     const username = userProfile?.username;
-    const shopLogo = userProfile?.shop_logo;
 
     const itemsHTML = sale.items.map(item => {
-      const product = products.find(p => p.id === item.productId);
       const itemPrice = item.price || 0;
       const itemTotal = item.quantity * itemPrice;
       return `
         <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;">${product?.name || 'Unknown Product'}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.productName || 'Product'}</td>
           <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
           <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">TSh ${itemPrice.toLocaleString()}</td>
           <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">TSh ${itemTotal.toLocaleString()}</td>
@@ -105,7 +95,7 @@ export default function ReceiptsScreen() {
 
     const signatureHTML = sale.signature ? `
       <div style="margin: 20px 0;">
-        <h3 style="margin: 0 0 10px 0; color: #2563eb;">Signature</h3>
+        <h3 style="margin: 0 0 10px 0; color: #2563eb;">${t('signature')}</h3>
         <div style="border: 1px solid #ddd; padding: 10px; border-radius: 4px; font-style: italic;">
           ${sale.signature}
         </div>
@@ -114,7 +104,7 @@ export default function ReceiptsScreen() {
 
     const descriptionHTML = sale.description ? `
       <div style="margin: 20px 0;">
-        <h3 style="margin: 0 0 10px 0; color: #2563eb;">Notes</h3>
+        <h3 style="margin: 0 0 10px 0; color: #2563eb;">${t('notes')}</h3>
         <div style="border: 1px solid #ddd; padding: 10px; border-radius: 4px; white-space: pre-wrap;">
           ${sale.description}
         </div>
@@ -201,7 +191,6 @@ export default function ReceiptsScreen() {
         </head>
         <body>
           <div class="header">
-            ${shopLogo ? `<img src="${shopLogo}" alt="${shopName} Logo" style="max-width: 100px; max-height: 60px; margin-bottom: 10px;" />` : ''}
             <h1>${shopName}</h1>
             <p>Receipt #${sale.id.slice(-8).toUpperCase()}</p>
             <p>${date} ${time}</p>
@@ -209,16 +198,16 @@ export default function ReceiptsScreen() {
 
           <div class="content">
             ${sale.customer_name ? `<div style="margin-bottom: 20px; padding: 10px; background-color: #f0f9ff; border-radius: 8px; border-left: 4px solid #2563eb;">
-              <strong style="color: #2563eb;">Customer:</strong> ${sale.customer_name}
+              <strong style="color: #2563eb;">${t('customerName')}:</strong> ${sale.customer_name}
             </div>` : ''}
-            <h2 style="margin-top: 0; color: #2563eb;">Items Purchased</h2>
+            <h2 style="margin-top: 0; color: #2563eb;">${t('itemsPurchased')}</h2>
             <table>
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th style="text-align: center;">Qty</th>
-                  <th style="text-align: right;">Price</th>
-                  <th style="text-align: right;">Total</th>
+                  <th>${t('product')}</th>
+                  <th style="text-align: center;">${t('quantity')}</th>
+                  <th style="text-align: right;">${t('price')}</th>
+                  <th style="text-align: right;">${t('total')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -228,15 +217,15 @@ export default function ReceiptsScreen() {
 
             <div class="summary">
               <div class="summary-row">
-                <span>Total:</span>
+                <span>${t('total')}:</span>
                 <span class="total">TSh ${(sale.total || 0).toLocaleString()}</span>
               </div>
               <div class="summary-row">
-                <span>Cash Received:</span>
+                <span>${t('cashReceived')}:</span>
                 <span>TSh ${(sale.cashReceived || 0).toLocaleString()}</span>
               </div>
               <div class="summary-row">
-                <span>Change:</span>
+                <span>${t('change')}:</span>
                 <span>TSh ${(sale.change || 0).toLocaleString()}</span>
               </div>
             </div>
@@ -254,17 +243,33 @@ export default function ReceiptsScreen() {
     `;
   };
 
-  const downloadReceiptAsPDF = async () => {
-    if (!selectedReceipt) return;
+  const downloadReceiptAsPDF = async (receipt: Sale | null = selectedReceipt) => {
+    if (!receipt) return;
 
     try {
-      const htmlContent = generateReceiptHTML(selectedReceipt, userProfile);
+      const htmlContent = generateReceiptHTML(receipt, userProfile);
+
+      if (Platform.OS === 'web') {
+        const receiptWindow = window.open('', '_blank', 'width=760,height=900');
+        if (!receiptWindow) {
+          Alert.alert(t('error'), t('allowPopups'));
+          return;
+        }
+        receiptWindow.document.open();
+        receiptWindow.document.write(htmlContent);
+        receiptWindow.document.close();
+        receiptWindow.focus();
+        window.setTimeout(() => receiptWindow.print(), 350);
+        return;
+      }
+
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,
         base64: false,
       });
 
-      const fileName = `receipt_${selectedReceipt.id.slice(-8)}.pdf`;
+      const fileName = `receipt_${receipt.id.slice(-8)}.pdf`;
+
       const newUri = `${FileSystem.documentDirectory}${fileName}`;
 
       await FileSystem.moveAsync({
@@ -320,11 +325,24 @@ export default function ReceiptsScreen() {
                 {receipt.items.length} item{receipt.items.length !== 1 ? 's' : ''}
               </Text>
             </View>
+            {receipt.customer_name ? (
+              <Text style={styles.receiptCustomerName}>Customer: {receipt.customer_name}</Text>
+            ) : null}
 
             <View style={styles.receiptTime}>
               <Text style={styles.receiptTimeText}>
                 {new Date(receipt.created_at).toLocaleTimeString()}
               </Text>
+              <TouchableOpacity
+                style={styles.cardShareButton}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  downloadReceiptAsPDF(receipt);
+                }}
+              >
+                <Share2 size={16} color="#FFFFFF" />
+                <Text style={styles.cardShareText}>{t('shareReceipt')}</Text>
+              </TouchableOpacity>
             </View>
           </TouchableOpacity>
         ))}
@@ -332,9 +350,9 @@ export default function ReceiptsScreen() {
         {filteredReceipts.length === 0 && (
           <View style={styles.emptyState}>
             <Receipt size={48} color="#9CA3AF" />
-            <Text style={styles.emptyStateText}>No receipts found</Text>
+            <Text style={styles.emptyStateText}>{t('noReceipts')}</Text>
             <Text style={styles.emptyStateSubtext}>
-              {searchTerm ? 'Try adjusting your search' : 'Receipts will appear here after sales'}
+              {searchTerm ? t('adjustSearch') : t('receiptsAfterSales')}
             </Text>
           </View>
         )}
@@ -346,7 +364,10 @@ export default function ReceiptsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          <Text style={styles.title}>Receipts History</Text>
+          <View>
+            <Text style={styles.title}>{userProfile?.shop_name || 'Your Shop'}</Text>
+            <Text style={styles.headerSubtitle}>{t('receiptsHistory')}</Text>
+          </View>
           <TouchableOpacity
             style={[styles.refreshButton, refreshing && styles.refreshingButton]}
             onPress={onRefresh}
@@ -359,7 +380,7 @@ export default function ReceiptsScreen() {
 
       <TextInput
         style={styles.searchInput}
-        placeholder="Search receipts by ID, date, or amount..."
+        placeholder={t('searchReceipts')}
         value={searchTerm}
         onChangeText={setSearchTerm}
         placeholderTextColor="#9CA3AF"
@@ -376,17 +397,18 @@ export default function ReceiptsScreen() {
       </ScrollView>
 
       {/* Receipt Detail Modal */}
-      <Modal visible={showReceiptModal} animationType="slide">
+      <Modal visible={showReceiptModal} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.modalBackdrop}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowReceiptModal(false)}>
-              <Text style={styles.cancelButton}>Cancel</Text>
+              <Text style={styles.cancelButton}>{t('cancel')}</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Receipt Details</Text>
+            <Text style={styles.modalTitle}>{t('receiptDetails')}</Text>
             <View style={styles.headerActions}>
               <TouchableOpacity
                 style={styles.downloadButton}
-                onPress={downloadReceiptAsPDF}
+                onPress={() => downloadReceiptAsPDF()}
               >
                 <Download size={16} color="#FFFFFF" />
                 <Text style={styles.downloadButtonText}>PDF</Text>
@@ -411,7 +433,7 @@ export default function ReceiptsScreen() {
                 setReceiptDescription('');
                 setCustomerName('');
               }}>
-                <Text style={styles.saveButton}>Done</Text>
+                <Text style={styles.saveButton}>{t('done')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -420,20 +442,20 @@ export default function ReceiptsScreen() {
             {selectedReceipt && (
               <View>
                 <View style={styles.receiptHeader}>
-                  <Text style={styles.receiptTitle}>{userProfile?.shop_name || 'Phone Shop POS'} Receipt</Text>
+                  <Text style={styles.receiptTitle}>{userProfile?.shop_name || 'Your Shop'}</Text>
+                  <Text style={styles.receiptId}>Receipt #{selectedReceipt.id.slice(-8).toUpperCase()}</Text>
                   <Text style={styles.receiptDate}>
                     {new Date(selectedReceipt.created_at).toLocaleDateString()} {new Date(selectedReceipt.created_at).toLocaleTimeString()}
                   </Text>
                 </View>
 
                 <View style={styles.receiptItems}>
-                  <Text style={styles.sectionTitle}>Items Purchased</Text>
+                  <Text style={styles.sectionTitle}>{t('itemsPurchased')}</Text>
                   {selectedReceipt.items.map((item, index) => {
-                    const product = products.find(p => p.id === item.productId);
                     return (
                       <View key={index} style={styles.receiptItem}>
                         <Text style={styles.receiptItemName}>
-                          {product?.name || 'Unknown Product'}
+                          {item.productName || 'Product'}
                         </Text>
                         <Text style={styles.receiptItemDetails}>
                           {item.quantity} x {formatCurrency(item.price)} = {formatCurrency(item.quantity * item.price)}
@@ -445,48 +467,48 @@ export default function ReceiptsScreen() {
 
                 <View style={styles.receiptSummary}>
                   <View style={styles.receiptSummaryTotal}>
-                    <Text style={styles.receiptTotalLabel}>Total:</Text>
+                    <Text style={styles.receiptTotalLabel}>{t('total')}:</Text>
                     <Text style={styles.receiptTotalAmount}>{formatCurrency(selectedReceipt.total)}</Text>
                   </View>
                   <View style={styles.receiptPayment}>
-                    <Text style={styles.receiptPaymentLabel}>Cash Received:</Text>
+                    <Text style={styles.receiptPaymentLabel}>{t('cashReceived')}:</Text>
                     <Text style={styles.receiptPaymentAmount}>{formatCurrency(selectedReceipt.cashReceived || 0)}</Text>
                   </View>
                   <View style={styles.receiptChange}>
-                    <Text style={styles.receiptChangeLabel}>Change:</Text>
+                    <Text style={styles.receiptChangeLabel}>{t('change')}:</Text>
                     <Text style={styles.receiptChangeAmount}>{formatCurrency(selectedReceipt.change || 0)}</Text>
                   </View>
                 </View>
 
                 <View style={styles.receiptCustomerSection}>
-                  <Text style={styles.sectionTitle}>Customer Name</Text>
+                  <Text style={styles.sectionTitle}>{t('customerName')}</Text>
                   <TextInput
                     style={styles.customerInput}
                     value={customerName}
                     onChangeText={setCustomerName}
-                    placeholder="Enter customer name"
+                    placeholder={t('enterCustomerReceipt')}
                     placeholderTextColor="#9CA3AF"
                   />
                 </View>
 
                 <View style={styles.receiptSignatureSection}>
-                  <Text style={styles.sectionTitle}>Signature</Text>
+                  <Text style={styles.sectionTitle}>{t('signature')}</Text>
                   <TextInput
                     style={styles.signatureInput}
                     value={receiptSignature}
                     onChangeText={setReceiptSignature}
-                    placeholder="Enter signature"
+                    placeholder={t('enterSignature')}
                     placeholderTextColor="#9CA3AF"
                   />
                 </View>
 
                 <View style={styles.receiptDescriptionSection}>
-                  <Text style={styles.sectionTitle}>Description/Notes</Text>
+                  <Text style={styles.sectionTitle}>{t('notes')}</Text>
                   <TextInput
                     style={styles.descriptionInput}
                     value={receiptDescription}
                     onChangeText={setReceiptDescription}
-                    placeholder="Add any notes or description"
+                    placeholder={t('enterNotes')}
                     multiline
                     numberOfLines={3}
                     placeholderTextColor="#9CA3AF"
@@ -495,11 +517,12 @@ export default function ReceiptsScreen() {
 
                 <View style={styles.receiptFooter}>
                   <Text style={styles.receiptFooterText}>Thank you for your business{userProfile?.username ? `, ${userProfile.username}` : ''}!</Text>
-                  <Text style={styles.receiptFooterText}>{userProfile?.shop_name || 'Phone Shop POS'} - Your Trusted Partner</Text>
+                  <Text style={styles.receiptFooterText}>{userProfile?.shop_name || 'Your Shop'}</Text>
                 </View>
               </View>
             )}
           </ScrollView>
+        </View>
         </View>
       </Modal>
     </View>
@@ -529,6 +552,17 @@ const createStyles = (viewportWidth: number) => {
     fontSize: width * 0.06,
     fontWeight: 'bold',
     color: '#111827',
+  },
+  headerSubtitle: {
+    marginTop: 2,
+    fontSize: width * 0.03,
+    color: '#6B7280',
+  },
+  receiptCustomerName: {
+    marginTop: width * 0.015,
+    fontSize: width * 0.032,
+    color: '#374151',
+    fontWeight: '500',
   },
   refreshButton: {
     padding: width * 0.02,
@@ -607,11 +641,27 @@ const createStyles = (viewportWidth: number) => {
     color: '#6B7280',
   },
   receiptTime: {
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   receiptTimeText: {
     fontSize: width * 0.03,
     color: '#9CA3AF',
+  },
+  cardShareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#2563EB',
+    borderRadius: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  cardShareText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: width * 0.03,
   },
   emptyState: {
     alignItems: 'center',
@@ -631,8 +681,20 @@ const createStyles = (viewportWidth: number) => {
     textAlign: 'center',
   },
   modalContainer: {
-    flex: 1,
+    width: '92%',
+    maxWidth: 760,
+    maxHeight: '92%',
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
   },
   modalHeader: {
     flexDirection: 'row',

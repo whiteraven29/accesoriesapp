@@ -47,9 +47,22 @@ In your Supabase dashboard:
 1. Click on "Authentication" in the left sidebar
 2. Go to "Settings" tab
 3. Configure your authentication settings:
-   - **Site URL**: your production Netlify URL
+   - **Site URL**: your production Netlify URL (replace any `http://localhost:3000` value)
    - **Redirect URLs**: add `http://localhost:8081/**`, your Netlify URL with `/**`, and
      `alexapp://**` for native password recovery
+
+For example, if the deployed site is `https://dukasmart.netlify.app`, configure:
+
+```text
+Site URL: https://dukasmart.netlify.app
+Redirect URLs:
+http://localhost:8081/**
+https://dukasmart.netlify.app/**
+alexapp://**
+```
+
+Supabase only honors the app's `emailRedirectTo` value when it matches the redirect allowlist;
+otherwise it falls back to the Site URL.
 4. Go to "Providers" and enable the authentication providers you want (Email is enabled by default)
 
 ## 5. Create Database Tables

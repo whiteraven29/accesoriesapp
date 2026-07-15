@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, useWindowDi
 import { useRouter } from 'expo-router';
 import { supabase } from '../../utils/supabase';
 import { useLanguage } from '../../hooks/LanguageContext';
+import { getAuthRedirectUrl } from '../../utils/authRedirect';
 
 export default function ForgotPasswordScreen() {
   const { t } = useLanguage();
@@ -20,9 +21,7 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(username.trim().toLowerCase(), {
-        redirectTo: typeof window !== 'undefined'
-          ? `${window.location.origin}/auth/update-password`
-          : 'alexapp://auth/update-password',
+        redirectTo: getAuthRedirectUrl('auth/update-password'),
       });
 
       if (error) {

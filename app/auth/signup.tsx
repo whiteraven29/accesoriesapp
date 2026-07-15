@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../utils/supabase';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
+import { getAuthRedirectUrl } from '../../utils/authRedirect';
 
 export default function SignupScreen() {
   const { t } = useLanguage();
@@ -43,6 +44,7 @@ export default function SignupScreen() {
         email,
         password,
         options: {
+          emailRedirectTo: getAuthRedirectUrl(),
           data: {
             username: username,
             full_name: fullName,

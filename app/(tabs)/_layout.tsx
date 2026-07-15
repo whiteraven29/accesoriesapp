@@ -1,6 +1,6 @@
 import { Tabs, useRouter } from 'expo-router';
 import { View, TouchableOpacity, useWindowDimensions, Platform } from 'react-native';
-import { Chrome as Home, Package, ShoppingCart, Users, ChartBar as BarChart3, Receipt, Languages } from 'lucide-react-native';
+import { Chrome as Home, Package, ShoppingCart, ChartBar as BarChart3, Languages, Menu } from 'lucide-react-native';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { useMemo } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -150,7 +150,9 @@ export default function TabLayout() {
           },
           tabBarActiveTintColor: '#2563EB',
           tabBarInactiveTintColor: '#6B7280',
-          tabBarShowLabel: width >= 390,
+          // Seven business modules fit safely on phones when the bottom bar is
+          // icon-only; labels return on tablets and larger screens.
+          tabBarShowLabel: width >= 600,
           tabBarStyle: {
             backgroundColor: '#FFFFFF',
             borderTopWidth: 1,
@@ -223,25 +225,13 @@ export default function TabLayout() {
         <Tabs.Screen
           name="receipts"
           options={{
-            title: t?.('receipts') || 'Receipts',
-            tabBarIcon: ({ size, color }) => (
-              <Receipt 
-                size={Math.min(size * (responsiveStyles.iconSize / 24), responsiveStyles.iconSize)} 
-                color={color} 
-              />
-            ),
+            href: null,
           }}
         />
         <Tabs.Screen
           name="customers"
           options={{
-            title: t?.('customers') || 'Customers',
-            tabBarIcon: ({ size, color }) => (
-              <Users 
-                size={Math.min(size * (responsiveStyles.iconSize / 24), responsiveStyles.iconSize)} 
-                color={color} 
-              />
-            ),
+            href: null,
           }}
         />
         <Tabs.Screen
@@ -253,6 +243,21 @@ export default function TabLayout() {
                 size={Math.min(size * (responsiveStyles.iconSize / 24), responsiveStyles.iconSize)} 
                 color={color} 
               />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="expenses"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="more"
+          options={{
+            title: t?.('more') || 'More',
+            tabBarIcon: ({ size, color }) => (
+              <Menu size={Math.min(size * (responsiveStyles.iconSize / 24), responsiveStyles.iconSize)} color={color} />
             ),
           }}
         />

@@ -277,7 +277,8 @@ export default function CustomersScreen() {
       </ScrollView>
 
       {/* Add/Edit Customer Modal */}
-      <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showAddModal} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.modalBackdrop}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={resetForm}>
@@ -342,16 +343,18 @@ export default function CustomersScreen() {
             </View>
           </ScrollView>
         </View>
+        </View>
       </Modal>
 
       {/* Loan Modal */}
-      <Modal visible={showLoanModal} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showLoanModal} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.modalBackdrop}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowLoanModal(false)}>
               <Text style={styles.cancelButton}>{t('cancel')}</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Loan Management</Text>
+            <Text style={styles.modalTitle}>{t('loanManagement')}</Text>
             <TouchableOpacity onPress={handleLoanSubmit}>
               <Text style={styles.saveButton}>{t('save')}</Text>
             </TouchableOpacity>
@@ -368,7 +371,7 @@ export default function CustomersScreen() {
                 </View>
 
                 {loanAction === 'add' && <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Add Loan Amount (TSH)</Text>
+                  <Text style={styles.inputLabel}>{t('addLoanAmount')} (TSH)</Text>
                   <TextInput
                     style={styles.textInput}
                     value={loanAmount.toString()}
@@ -380,7 +383,7 @@ export default function CustomersScreen() {
                 </View>}
 
                 {loanAction === 'pay' && <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Payment Amount (TSH)</Text>
+                  <Text style={styles.inputLabel}>{t('paymentAmount')} (TSH)</Text>
                   <TextInput
                     style={styles.textInput}
                     value={paymentAmount.toString()}
@@ -393,7 +396,7 @@ export default function CustomersScreen() {
 
                 {(loanAmount > 0 || paymentAmount > 0) && (
                   <View style={styles.loanCalculation}>
-                    <Text style={styles.calculationTitle}>New Balance Calculation</Text>
+                    <Text style={styles.calculationTitle}>{t('newBalanceCalculation')}</Text>
                     <Text>Current: {formatCurrency(selectedCustomer.loanBalance)}</Text>
                     {loanAmount > 0 && <Text>+ Loan: {formatCurrency(loanAmount)}</Text>}
                     {paymentAmount > 0 && <Text>- Payment: {formatCurrency(paymentAmount)}</Text>}
@@ -405,6 +408,7 @@ export default function CustomersScreen() {
               </>
             )}
           </ScrollView>
+        </View>
         </View>
       </Modal>
     </View>
@@ -637,15 +641,27 @@ const createStyles = (viewportWidth: number) => {
     textAlign: 'center',
   },
   modalContainer: {
-    flex: 1,
+    width: '92%',
+    maxWidth: 760,
+    maxHeight: '92%',
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: width * 0.03,
-    paddingTop: width * 0.12,
+    paddingTop: width * 0.03,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },

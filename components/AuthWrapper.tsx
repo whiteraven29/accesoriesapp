@@ -7,11 +7,10 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const inAuthGroup = segments[0] === 'auth';
 
   useEffect(() => {
     if (loading) return;
-
-    const inAuthGroup = segments[0] === 'auth';
 
     if (!user && !inAuthGroup) {
       // User is not authenticated and not on auth screen, redirect to login
@@ -20,9 +19,11 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
       // User is authenticated and on auth screen, redirect to main app
       router.replace('/(tabs)');
     }
-  }, [user, loading, segments]);
+  }, [user, loading, inAuthGroup, router]);
 
-  if (loading) {
+  const redirecting = (!user && !inAuthGroup) || Boolean(user && inAuthGroup);
+
+  if (loading || redirecting) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2563EB" />

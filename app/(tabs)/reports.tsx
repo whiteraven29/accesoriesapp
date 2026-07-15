@@ -7,6 +7,7 @@ import { useProducts } from '../../hooks/useProducts';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useSales } from '../../hooks/useSales';
 import { useLosses } from '../../hooks/useLosses';
+import { useExpenses } from '../../hooks/useExpenses';
 import { supabase } from '../../utils/supabase';
 import { grossMarginPercentage, grossProfit, lineTotal } from '../../utils/calculations';
 
@@ -16,6 +17,7 @@ export default function ReportsScreen() {
   const { customers, fetchCustomers } = useCustomers();
   const { sales, fetchSales } = useSales();
   const { losses, fetchLosses } = useLosses();
+  const { expenses, fetchExpenses } = useExpenses();
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
   const [refreshing, setRefreshing] = useState(false);
   const [profitLoss, setProfitLoss] = useState({
@@ -24,6 +26,7 @@ export default function ReportsScreen() {
     profit: 0,
     margin: 0,
     losses: 0,
+    expenses: 0,
   });
   const { width } = useWindowDimensions();
 
@@ -33,7 +36,8 @@ export default function ReportsScreen() {
       fetchProducts(),
       fetchCustomers(),
       fetchSales(),
-      fetchLosses()
+      fetchLosses(),
+      fetchExpenses()
     ]);
     setRefreshing(false);
   };
@@ -87,7 +91,7 @@ export default function ReportsScreen() {
 
       if (error) {
         console.error('Error fetching sale items with products:', error);
-        setProfitLoss({ revenue: totalRevenue, cost: 0, profit: 0, margin: 0, losses: 0 });
+        setProfitLoss({ revenue: totalRevenue, cost: 0, profit: 0, margin: 0, losses: 0, expenses: 0 });
         return;
       }
 
@@ -101,19 +105,26 @@ export default function ReportsScreen() {
           return createdAt >= startDate && createdAt <= endDate;
         })
         .reduce((total, loss) => total + loss.lossValue, 0);
-      const profit = grossProfit(totalRevenue, totalCost + periodLosses);
+      const periodExpenses = expenses
+        .filter(expense => {
+          const expenseDate = new Date(`${expense.expenseDate}T00:00:00`);
+          return expenseDate >= startDate && expenseDate <= endDate;
+        })
+        .reduce((total, expense) => total + expense.amount, 0);
+      const profit = grossProfit(totalRevenue, totalCost + periodLosses + periodExpenses);
 
       setProfitLoss({
         revenue: totalRevenue,
         cost: totalCost,
         profit,
-        margin: grossMarginPercentage(totalRevenue, totalCost + periodLosses),
+        margin: grossMarginPercentage(totalRevenue, totalCost + periodLosses + periodExpenses),
         losses: periodLosses,
+        expenses: periodExpenses,
       });
     };
 
     calculateProfitLoss();
-  }, [sales, losses, selectedPeriod]);
+  }, [sales, losses, expenses, selectedPeriod]);
 
   const getInventoryValue = () => {
     return {
@@ -262,6 +273,9 @@ export default function ReportsScreen() {
             </Text>
             <Text style={styles.financialDetail}>
               {t('lossInformation')}: {formatCurrency(profitLoss.losses)}
+            </Text>
+            <Text style={styles.financialDetail}>
+              {t('operatingExpenses')}: {formatCurrency(profitLoss.expenses)}
             </Text>
             <Text style={styles.financialDetail}>
               {t('profitMargin')}: {profitLoss.margin.toFixed(2)}%

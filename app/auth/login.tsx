@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../utils/supabase';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
+import { getAuthRedirectUrl } from '../../utils/authRedirect';
 
 export default function LoginScreen() {
   const { t } = useLanguage();
@@ -13,6 +14,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [emailNeedsConfirmation, setEmailNeedsConfirmation] = useState(false);
 
   const handleLogin = async () => {
     if (!username || !password) {
@@ -21,6 +23,7 @@ export default function LoginScreen() {
     }
 
     setLoading(true);
+    setEmailNeedsConfirmation(false);
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email: username.trim().toLowerCase(),
@@ -28,7 +31,16 @@ export default function LoginScreen() {
       });
 
       if (error) {
-        Alert.alert(t('error'), error.message);
+        const needsConfirmation = error.message.toLowerCase().includes('email not confirmed');
+        setEmailNeedsConfirmation(needsConfirmation);
+        Alert.alert(
+          t('error'),
+          needsConfirmation
+            ? 'Your email is not verified yet. Check your inbox or resend the verification email below.'
+            : error.message.toLowerCase().includes('invalid login credentials')
+              ? 'Incorrect email or password. Use the email address entered during signup.'
+              : error.message
+        );
       } else {
         router.replace('/(tabs)');
       }
@@ -37,6 +49,25 @@ export default function LoginScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const resendConfirmation = async () => {
+    const email = username.trim().toLowerCase();
+    if (!email) {
+      Alert.alert(t('error'), 'Enter your email address first.');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: getAuthRedirectUrl() },
+    });
+    setLoading(false);
+    Alert.alert(
+      error ? t('error') : 'Verification sent',
+      error?.message || 'Check your email inbox and spam folder, then sign in after verification.'
+    );
   };
 
   const styles = createStyles(width);
@@ -95,6 +126,12 @@ export default function LoginScreen() {
             {loading ? 'Signing In...' : 'Sign In'}
           </Text>
         </TouchableOpacity>
+
+        {emailNeedsConfirmation && (
+          <TouchableOpacity style={styles.linkButton} onPress={resendConfirmation} disabled={loading}>
+            <Text style={styles.linkTextBold}>Resend verification email</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={styles.linkButton}

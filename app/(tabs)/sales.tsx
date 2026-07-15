@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions, Platform } from 'react-native';
 import { ShoppingCart, Plus, Minus, Trash2, Calculator, Users, CreditCard, RefreshCw, Download } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -50,6 +50,7 @@ export default function SalesScreen() {
   const [currentSale, setCurrentSale] = useState<Sale | null>(null);
   const [receiptSignature, setReceiptSignature] = useState('');
   const [receiptDescription, setReceiptDescription] = useState('');
+  const [checkoutCustomerName, setCheckoutCustomerName] = useState('');
   const [userProfile, setUserProfile] = useState<{username: string, shop_name: string} | null>(null);
   const [currentItem, setCurrentItem] = useState<CartItem | null>(null);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
@@ -181,6 +182,7 @@ export default function SalesScreen() {
     }
     // Set cash received to total amount by default
     setCashReceived(getCashDue());
+    setCheckoutCustomerName(selectedCustomerData?.name || '');
     setShowCheckout(true);
   };
 
@@ -239,6 +241,7 @@ export default function SalesScreen() {
         total,
         cashReceived,
         change: Math.max(0, cashReceived - cashDue),
+        customer_name: checkoutCustomerName.trim() || undefined,
       },
       cart.map(item => {
         const product = products.find(p => p.id === item.productId);
@@ -259,7 +262,6 @@ export default function SalesScreen() {
     // Show receipt
     if (result) {
       setCurrentSale(result);
-      await fetchUserProfile();
       setShowReceiptModal(true);
       await fetchProducts();
     } else {
@@ -272,6 +274,7 @@ export default function SalesScreen() {
     setCashReceived(0);
     setShowCheckout(false);
     setSelectedCustomer(null);
+    setCheckoutCustomerName('');
   };
 
   const ProductTable = () => {
@@ -422,50 +425,65 @@ export default function SalesScreen() {
     }
   };
 
+  useEffect(() => { fetchUserProfile(); }, []);
+
   const generateReceiptHTML = (
     sale: Sale,
     signature: string,
     description: string,
     userProfile: { username: string; shop_name: string } | null
   ) => {
+    const escapeHtml = (value?: string) => (value || '').replace(/[&<>"']/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+    })[character] || character);
+    const shopName = escapeHtml(userProfile?.shop_name || 'Your Shop');
+    const receiptNumber = sale.id.slice(-8).toUpperCase();
+    const soldAt = new Date(sale.created_at);
     const itemsHTML = sale.items
       .map((item) => {
         const product = products.find((p) => p.id === item.productId);
+        const productName = escapeHtml(item.productName || product?.name || 'Product');
+        const imei = escapeHtml(item.productImei || product?.imei);
         return `
           <tr>
-            <td>${product?.name || 'Unknown Product'}</td>
-            <td>${item.quantity}</td>
-            <td>${item.price.toLocaleString()}</td>
-            <td>${(item.quantity * item.price).toLocaleString()}</td>
-            ${
-              product?.category === 'Phones' && product?.imei
-                ? `<td>${product.imei}</td>` // Display IMEI for phones
-                : ''
-            }
+            <td><strong>${productName}</strong>${imei ? `<small>IMEI: ${imei}</small>` : ''}</td>
+            <td class="center">${item.quantity}</td>
+            <td class="money">${formatCurrency(item.price)}</td>
+            <td class="money">${formatCurrency(item.quantity * item.price)}</td>
           </tr>
         `;
       })
       .join('');
 
     return `
-      <html>
+      <!doctype html><html><head><meta charset="utf-8"><style>
+        *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;padding:24px;background:#f4f7fb}
+        .receipt{max-width:680px;margin:auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #dbe3ef}
+        header{padding:28px;background:#1746a2;color:#fff;text-align:center}h1{margin:0 0 8px;font-size:28px}.meta{opacity:.9;font-size:13px}
+        main{padding:26px}.customer,.notes{padding:12px 14px;background:#eff6ff;border-left:4px solid #2563eb;margin-bottom:18px}
+        table{width:100%;border-collapse:collapse;font-size:13px}th{padding:10px 8px;text-align:left;background:#edf2f7;border-bottom:2px solid #cbd5e1}
+        td{padding:12px 8px;border-bottom:1px solid #e5e7eb}small{display:block;color:#64748b;margin-top:4px}.center{text-align:center}.money{text-align:right;white-space:nowrap}
+        .summary{margin:18px 0 0 auto;width:300px}.row{display:flex;justify-content:space-between;padding:6px 0}.total{font-size:18px;font-weight:700;border-top:2px solid #1746a2;margin-top:5px;padding-top:10px;color:#1746a2}
+        footer{text-align:center;padding:20px;background:#f8fafc;color:#64748b;font-size:12px}@media(max-width:520px){body{padding:0}.receipt{border-radius:0}.summary{width:100%}main{padding:16px}}
+      </style></head>
         <body>
+        <div class="receipt"><header><h1>${shopName}</h1><div class="meta">SALES RECEIPT #${receiptNumber}<br>${soldAt.toLocaleDateString()} · ${soldAt.toLocaleTimeString()}</div></header><main>
+          ${sale.customer_name ? `<div class="customer"><strong>Customer</strong><br>${escapeHtml(sale.customer_name)}</div>` : ''}
           <table>
             <thead>
               <tr>
                 <th>Product</th>
-                <th>Qty</th>
-                <th>Price</th>
-                <th>Total</th>
-                <th>IMEI</th>
+                <th class="center">Qty</th>
+                <th class="money">Unit price</th>
+                <th class="money">Amount</th>
               </tr>
             </thead>
-            <tbody>
-              ${itemsHTML}
-            </tbody>
+            <tbody>${itemsHTML}</tbody>
           </table>
-        </body>
-      </html>
+          <div class="summary"><div class="row"><span>Cash received</span><strong>${formatCurrency(sale.cashReceived)}</strong></div><div class="row"><span>Change</span><strong>${formatCurrency(sale.change)}</strong></div><div class="row total"><span>Total</span><span>${formatCurrency(sale.total)}</span></div></div>
+          ${description ? `<div class="notes"><strong>Notes</strong><br>${escapeHtml(description)}</div>` : ''}
+          ${signature ? `<div class="notes"><strong>Served / signed by</strong><br>${escapeHtml(signature)}</div>` : ''}
+        </main><footer>Thank you for shopping with ${shopName}.</footer></div></body></html>
     `;
   };
 
@@ -474,6 +492,21 @@ export default function SalesScreen() {
 
     try {
       const htmlContent = generateReceiptHTML(currentSale, receiptSignature, receiptDescription, userProfile);
+
+      if (Platform.OS === 'web') {
+        const receiptWindow = window.open('', '_blank', 'width=760,height=900');
+        if (!receiptWindow) {
+          Alert.alert(t('error'), t('allowPopups'));
+          return;
+        }
+        receiptWindow.document.open();
+        receiptWindow.document.write(htmlContent);
+        receiptWindow.document.close();
+        receiptWindow.focus();
+        window.setTimeout(() => receiptWindow.print(), 350);
+        return;
+      }
+
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,
         base64: false,
@@ -558,14 +591,20 @@ export default function SalesScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator={width < 768}>
+        <ScrollView
+          horizontal
+          style={styles.tableScroll}
+          contentContainerStyle={styles.tableScrollContent}
+          showsHorizontalScrollIndicator={width < 768}
+        >
           <ProductTable />
         </ScrollView>
       </ScrollView>
 
       <CartSummary />
 
-      <Modal visible={showQuickProductModal} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showQuickProductModal} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.modalBackdrop}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowQuickProductModal(false)}>
@@ -615,9 +654,11 @@ export default function SalesScreen() {
             </View>
           </ScrollView>
         </View>
+        </View>
       </Modal>
 
-      <Modal visible={showCheckout} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showCheckout} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.modalBackdrop}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowCheckout(false)}>
@@ -631,7 +672,7 @@ export default function SalesScreen() {
 
           <ScrollView style={styles.modalContent}>
             <View style={styles.checkoutSummary}>
-              <Text style={styles.sectionTitle}>Order Summary</Text>
+              <Text style={styles.sectionTitle}>{t('orderSummary')}</Text>
               {cart.map(item => {
                 const product = products.find(p => p.id === item.productId);
                 if (!product) return null;
@@ -653,14 +694,25 @@ export default function SalesScreen() {
                   {t('total')}: {formatCurrency(getCartTotal())}
                 </Text>
                 {getLoanTotal() > 0 && (
-                  <Text style={styles.checkoutItemPrice}>Loan: {formatCurrency(getLoanTotal())}</Text>
+                  <Text style={styles.checkoutItemPrice}>{t('loan')}: {formatCurrency(getLoanTotal())}</Text>
                 )}
                 <Text style={styles.checkoutItemPrice}>Cash due: {formatCurrency(getCashDue())}</Text>
               </View>
             </View>
 
             <View style={styles.paymentSection}>
-              <Text style={styles.sectionTitle}>Payment</Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('customerNameOptional')}</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={checkoutCustomerName}
+                  onChangeText={setCheckoutCustomerName}
+                  placeholder={t('enterCustomerReceipt')}
+                  autoCapitalize="words"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+              <Text style={styles.sectionTitle}>{t('payment')}</Text>
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('cash')} (TSH)</Text>
                 <TextInput
@@ -686,18 +738,20 @@ export default function SalesScreen() {
             </View>
           </ScrollView>
         </View>
+        </View>
       </Modal>
 
       {/* Customer Selection Modal */}
-      <Modal visible={showCustomerModal} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showCustomerModal} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.modalBackdrop}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowCustomerModal(false)}>
               <Text style={styles.cancelButton}>{t('cancel')}</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Select Customer</Text>
+            <Text style={styles.modalTitle}>{t('selectCustomerTitle')}</Text>
             <TouchableOpacity onPress={() => setShowCustomerModal(false)}>
-              <Text style={styles.saveButton}>Done</Text>
+              <Text style={styles.saveButton}>{t('done')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -707,7 +761,7 @@ export default function SalesScreen() {
               onPress={() => selectCustomer(null)}
             >
               <Text style={[styles.customerOptionText, !selectedCustomer && styles.selectedCustomerText]}>
-                No Customer (Cash Sale)
+                {t('cashSaleNoCustomer')}
               </Text>
             </TouchableOpacity>
 
@@ -729,18 +783,20 @@ export default function SalesScreen() {
             ))}
           </ScrollView>
         </View>
+        </View>
       </Modal>
 
       {/* Discount Modal */}
-      <Modal visible={showDiscountModal} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showDiscountModal} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.modalBackdrop}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowDiscountModal(false)}>
               <Text style={styles.cancelButton}>{t('cancel')}</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Apply Discount</Text>
+            <Text style={styles.modalTitle}>{t('applyDiscount')}</Text>
             <TouchableOpacity onPress={confirmDiscount}>
-              <Text style={styles.saveButton}>Apply</Text>
+              <Text style={styles.saveButton}>{t('apply')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -755,7 +811,7 @@ export default function SalesScreen() {
                 </Text>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Discount Percentage (%)</Text>
+                  <Text style={styles.inputLabel}>{t('discountPercentage')}</Text>
                   <TextInput
                     style={styles.textInput}
                     value={discountPercentage.toString()}
@@ -786,16 +842,18 @@ export default function SalesScreen() {
             )}
           </ScrollView>
         </View>
+        </View>
       </Modal>
 
       {/* Receipt Modal */}
-      <Modal visible={showReceiptModal} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showReceiptModal} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.modalBackdrop}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowReceiptModal(false)}>
               <Text style={styles.cancelButton}>{t('cancel')}</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Sale Receipt</Text>
+            <Text style={styles.modalTitle}>{t('saleReceipt')}</Text>
             <View style={styles.headerActions}>
               <TouchableOpacity
                 style={styles.downloadButton}
@@ -809,7 +867,7 @@ export default function SalesScreen() {
                 setReceiptSignature('');
                 setReceiptDescription('');
               }}>
-                <Text style={styles.saveButton}>Done</Text>
+                <Text style={styles.saveButton}>{t('done')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -818,20 +876,21 @@ export default function SalesScreen() {
             {currentSale && (
               <View>
                 <View style={styles.receiptHeader}>
-                  <Text style={styles.receiptTitle}>{userProfile?.shop_name || 'AlexShop'} Receipt</Text>
+                  <Text style={styles.receiptTitle}>{userProfile?.shop_name || 'Your Shop'}</Text>
+                  <Text style={styles.receiptNumber}>RECEIPT #{currentSale.id.slice(-8).toUpperCase()}</Text>
                   <Text style={styles.receiptDate}>
                     {new Date(currentSale.created_at).toLocaleDateString()} {new Date(currentSale.created_at).toLocaleTimeString()}
                   </Text>
                 </View>
 
                 <View style={styles.receiptItems}>
-                  <Text style={styles.sectionTitle}>Items Purchased</Text>
+                  <Text style={styles.sectionTitle}>{t('itemsPurchased')}</Text>
                   {currentSale.items.map((item, index) => {
                     const product = products.find(p => p.id === item.productId);
                     return (
                       <View key={index} style={styles.receiptItem}>
                         <Text style={styles.receiptItemName}>
-                          {product?.name || 'Unknown Product'}
+                          {item.productName || product?.name || 'Product'}
                         </Text>
                         <Text style={styles.receiptItemDetails}>
                           {item.quantity} x {formatCurrency(item.price)} = {formatCurrency(item.quantity * item.price)}
@@ -843,29 +902,28 @@ export default function SalesScreen() {
 
                 <View style={styles.receiptSummary}>
                   <View style={styles.receiptTotal}>
-                    <Text style={styles.receiptTotalLabel}>Total:</Text>
+                    <Text style={styles.receiptTotalLabel}>{t('total')}:</Text>
                     <Text style={styles.receiptTotalAmount}>{formatCurrency(currentSale.total)}</Text>
                   </View>
                   <View style={styles.receiptPayment}>
-                    <Text style={styles.receiptPaymentLabel}>Cash Received:</Text>
+                    <Text style={styles.receiptPaymentLabel}>{t('cashReceived')}:</Text>
                     <Text style={styles.receiptPaymentAmount}>{formatCurrency(currentSale.cashReceived || 0)}</Text>
                   </View>
                   <View style={styles.receiptChange}>
-                    <Text style={styles.receiptChangeLabel}>Change:</Text>
+                    <Text style={styles.receiptChangeLabel}>{t('change')}:</Text>
                     <Text style={styles.receiptChangeAmount}>{formatCurrency(currentSale.change || 0)}</Text>
                   </View>
                 </View>
 
-                {selectedCustomerData && (
+                {currentSale.customer_name && (
                   <View style={styles.receiptCustomer}>
-                    <Text style={styles.sectionTitle}>Customer Information</Text>
-                    <Text style={styles.receiptCustomerName}>{selectedCustomerData.name}</Text>
-                    <Text style={styles.receiptCustomerPhone}>{selectedCustomerData.phone}</Text>
+                    <Text style={styles.sectionTitle}>{t('customerInformation')}</Text>
+                    <Text style={styles.receiptCustomerName}>{currentSale.customer_name}</Text>
                   </View>
                 )}
 
                 <View style={styles.receiptSignatureSection}>
-                  <Text style={styles.sectionTitle}>Signature</Text>
+                  <Text style={styles.sectionTitle}>{t('signature')}</Text>
                   <TextInput
                     style={styles.signatureInput}
                     value={receiptSignature}
@@ -876,7 +934,7 @@ export default function SalesScreen() {
                 </View>
 
                 <View style={styles.receiptDescriptionSection}>
-                  <Text style={styles.sectionTitle}>Description/Notes</Text>
+                  <Text style={styles.sectionTitle}>{t('notes')}</Text>
                   <TextInput
                     style={styles.descriptionInput}
                     value={receiptDescription}
@@ -890,11 +948,12 @@ export default function SalesScreen() {
 
                 <View style={styles.receiptFooter}>
                   <Text style={styles.receiptFooterText}>Thank you for your business{userProfile?.username ? `, ${userProfile.username}` : ''}!</Text>
-                  <Text style={styles.receiptFooterText}>{userProfile?.shop_name || 'AlexShop'} - Your Trusted Partner</Text>
+                  <Text style={styles.receiptFooterText}>{userProfile?.shop_name || 'Your Shop'}</Text>
                 </View>
               </View>
             )}
           </ScrollView>
+        </View>
         </View>
       </Modal>
     </View>
@@ -1030,6 +1089,13 @@ const createStyles = (viewportWidth: number) => {
   productsList: {
     flex: 1,
     paddingHorizontal: width * 0.03,
+  },
+  tableScroll: {
+    width: '100%',
+  },
+  tableScrollContent: {
+    flexGrow: 1,
+    paddingBottom: width * 0.03,
   },
   productCard: {
     backgroundColor: '#FFFFFF',
@@ -1228,15 +1294,27 @@ const createStyles = (viewportWidth: number) => {
     fontWeight: '600',
   },
   modalContainer: {
-    flex: 1,
+    width: '92%',
+    maxWidth: 760,
+    maxHeight: '92%',
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: width * 0.03,
-    paddingTop: width * 0.12,
+    paddingTop: width * 0.03,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
@@ -1330,12 +1408,11 @@ const createStyles = (viewportWidth: number) => {
     fontWeight: 'bold',
   },
   tableContainer: {
-    minWidth: viewportWidth < 768 ? 640 : undefined,
+    minWidth: viewportWidth < 768 ? 720 : '100%',
     width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: width * 0.03,
-    marginHorizontal: width * 0.03,
-    marginBottom: width * 0.03,
+    marginBottom: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -1354,6 +1431,7 @@ const createStyles = (viewportWidth: number) => {
     fontSize: width * 0.035,
     fontWeight: 'bold',
     color: '#374151',
+    paddingHorizontal: 6,
   },
   tableRow: {
     flexDirection: 'row',
@@ -1365,6 +1443,7 @@ const createStyles = (viewportWidth: number) => {
   tableCell: {
     fontSize: width * 0.035,
     color: '#111827',
+    paddingHorizontal: 6,
   },
   customerOption: {
     padding: width * 0.04,
@@ -1421,6 +1500,13 @@ const createStyles = (viewportWidth: number) => {
     fontWeight: 'bold',
     color: '#111827',
     marginBottom: width * 0.02,
+  },
+  receiptNumber: {
+    marginTop: 6,
+    fontSize: width * 0.03,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: '#2563EB',
   },
   receiptDate: {
     fontSize: width * 0.035,

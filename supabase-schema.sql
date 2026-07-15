@@ -96,6 +96,14 @@ alter table sales enable row level security;
 alter table sale_items enable row level security;
 alter table losses enable row level security;
 
+-- Enable Postgres-change broadcasts used by the application hooks.
+alter publication supabase_realtime add table customers;
+alter publication supabase_realtime add table customer_loan_history;
+alter publication supabase_realtime add table products;
+alter publication supabase_realtime add table sales;
+alter publication supabase_realtime add table sale_items;
+alter publication supabase_realtime add table losses;
+
 -- Create RLS policies for user_profiles
 create policy "Users can view their own profile" on user_profiles
   for select using (auth.uid() = id);
@@ -211,8 +219,9 @@ create or replace function public.complete_sale(
   p_total numeric,
   p_cash_received numeric,
   p_items jsonb,
-  p_customer_id uuid default null,
-  p_loan_amount numeric default 0
+  p_customer_id uuid,
+  p_loan_amount numeric,
+  p_customer_name text
 ) returns uuid
 language plpgsql
 security invoker
@@ -239,8 +248,12 @@ begin
     raise exception 'A customer is required for a loan sale';
   end if;
 
-  insert into sales (user_id, total, cash_received, change)
-  values (v_user_id, p_total, p_cash_received, greatest(0, p_cash_received - (p_total - p_loan_amount)))
+  insert into sales (user_id, total, cash_received, change, customer_name)
+  values (
+    v_user_id, p_total, p_cash_received,
+    greatest(0, p_cash_received - (p_total - p_loan_amount)),
+    nullif(trim(p_customer_name), '')
+  )
   returning id into v_sale_id;
 
   for v_item in select value from jsonb_array_elements(p_items)
@@ -288,7 +301,7 @@ begin
 end;
 $$;
 
-grant execute on function public.complete_sale(numeric, numeric, jsonb, uuid, numeric) to authenticated;
+grant execute on function public.complete_sale(numeric, numeric, jsonb, uuid, numeric, text) to authenticated;
 
 -- Adjust a customer loan and write its audit record in one transaction.
 create or replace function public.adjust_customer_loan(

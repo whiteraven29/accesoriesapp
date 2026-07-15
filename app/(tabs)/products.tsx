@@ -238,7 +238,12 @@ export default function ProductsScreen() {
         }
       >
         {filteredProducts.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={width < 768}>
+          <ScrollView
+            horizontal
+            style={styles.tableScroll}
+            contentContainerStyle={styles.tableScrollContent}
+            showsHorizontalScrollIndicator={width < 768}
+          >
             <ProductTable />
           </ScrollView>
         ) : (
@@ -251,7 +256,8 @@ export default function ProductsScreen() {
       </ScrollView>
      </View>
 
-      <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showAddModal} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.modalBackdrop}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={resetForm}>
@@ -426,6 +432,7 @@ export default function ProductsScreen() {
             )}
           </ScrollView>
         </View>
+        </View>
       </Modal>
     </View>
   );
@@ -524,6 +531,13 @@ const createStyles = (viewportWidth: number) => {
   productsList: {
     flex: 1,
     paddingHorizontal: width * 0.03,
+  },
+  tableScroll: {
+    width: '100%',
+  },
+  tableScrollContent: {
+    flexGrow: 1,
+    paddingBottom: width * 0.03,
   },
   productCard: {
     backgroundColor: '#FFFFFF',
@@ -636,15 +650,27 @@ const createStyles = (viewportWidth: number) => {
     textAlign: 'center',
   },
   modalContainer: {
-    flex: 1,
+    width: '92%',
+    maxWidth: 760,
+    maxHeight: '92%',
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: width * 0.03,
-    paddingTop: width * 0.12,
+    paddingTop: width * 0.03,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
@@ -714,12 +740,11 @@ const createStyles = (viewportWidth: number) => {
     color: '#2563EB',
   },
   tableContainer: {
-    minWidth: viewportWidth < 768 ? 760 : undefined,
+    minWidth: viewportWidth < 768 ? 860 : '100%',
     width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: width * 0.03,
-    marginHorizontal: width * 0.03,
-    marginBottom: width * 0.03,
+    marginBottom: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -738,6 +763,7 @@ const createStyles = (viewportWidth: number) => {
     fontSize: width * 0.035,
     fontWeight: 'bold',
     color: '#374151',
+    paddingHorizontal: 6,
   },
   tableRow: {
     flexDirection: 'row',
@@ -749,6 +775,7 @@ const createStyles = (viewportWidth: number) => {
   tableCell: {
     fontSize: width * 0.035,
     color: '#111827',
+    paddingHorizontal: 6,
   },
   categoryButtons: {
     flexDirection: 'row',

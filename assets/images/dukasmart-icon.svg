@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="DukaSmart">
+  <rect width="512" height="512" rx="112" fill="#1746A2"/>
+  <path d="M104 116h304l31 90c5 16-7 32-24 32-20 0-37-12-43-30-7 18-24 30-44 30s-37-12-44-30c-7 18-24 30-44 30s-37-12-44-30c-7 18-24 30-44 30-17 0-29-16-24-32l32-90Z" fill="#fff"/>
+  <path d="M132 244v146c0 12 10 22 22 22h204c12 0 22-10 22-22V244" fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round"/>
+  <path d="M191 276h70c55 0 91 27 91 68s-36 68-91 68h-70V276Zm43 37v62h27c29 0 47-11 47-31s-18-31-47-31h-27Z" fill="#fff"/>
+  <circle cx="387" cy="365" r="31" fill="#22C55E"/>
+  <path d="m373 365 10 10 20-23" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
