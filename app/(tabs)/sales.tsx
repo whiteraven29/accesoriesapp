@@ -1,13 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions, Platform } from 'react-native';
 import { ShoppingCart, Plus, Minus, Trash2, Calculator, Users, CreditCard, RefreshCw, Download } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import { CONTENT_MAX_WIDTH } from '../../constants/layout';
+import { Palette, fontSize, fontWeight, radius, spacing } from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
-import { useSales, Sale } from '../../hooks/useSales';
+import { useSales, Sale, SaleItem, PaymentMethod, PAYMENT_METHODS, REFERENCE_METHODS, WARRANTY_OPTIONS, warrantyState } from '../../hooks/useSales';
+import { useAvailableUnits, createProductUnit } from '../../hooks/useProductUnits';
 import { useCustomers } from '../../hooks/useCustomers';
 import { supabase } from '../../utils/supabase';
 import { discountedUnitPrice, lineTotal, roundMoney } from '../../utils/calculations';
@@ -17,22 +21,59 @@ interface CartItem {
   quantity: number;
   discount?: number; // Percentage discount (0-100)
   useLoan?: boolean; // Whether to use loan for this item
+  /**
+   * IMEI unit ids for serialised products. A handset leaves the shop as a
+   * specific device, so the line records which ones rather than just a count.
+   */
+  unitIds?: string[];
+  /**
+   * Warranty term in months, chosen by the seller. Only meaningful for
+   * serialised lines, which is where the till exposes the control.
+   */
+  warrantyMonths?: number;
 }
 
-interface Product {
-  id: string;
-  name: string;
-  brand: string;
-  category: string;
-  buyingPrice: number;
-  sellingPrice: number;
-  pieces: number;
-  lowStockAlert?: number;
-  imei?: string;
+/**
+ * The IMEIs handed over on a sale line, newest scheme first.
+ *
+ * `unitImeis` comes from the `product_units` rows bound to this sale item, so a
+ * line selling three handsets prints three numbers. `productImei` is the
+ * pre-v3 single column, kept only so receipts reprinted from sales made before
+ * units existed still show what left the shop.
+ */
+
+/**
+ * The warranty line for a receipt row.
+ *
+ * A line with no expiry is not "expired" — accessories and everything sold
+ * before v5 simply carry no cover, and saying otherwise on a printed receipt
+ * would invent a promise the shop never made.
+ */
+function warrantyLabel(
+  item: SaleItem,
+  t: (key: string) => string,
+): string | null {
+  if (!item.warrantyUntil) return null;
+  const until = new Date(`${item.warrantyUntil}T23:59:59`);
+  if (Number.isNaN(until.getTime())) return null;
+  const term = item.warrantyMonths ? ` (${item.warrantyMonths} ${t('months')})` : '';
+  return warrantyState(item.warrantyUntil) === 'expired'
+    ? `${t('warrantyExpired')}: ${until.toLocaleDateString()}`
+    : `${t('warrantyExpires')} ${until.toLocaleDateString()}${term}`;
+}
+
+/** Twelve months is what serialised stock was hardcoded to before v5. */
+const DEFAULT_WARRANTY_MONTHS = 12;
+
+function soldImeis(item: SaleItem, product?: { imei?: string }): string[] {
+  if (item.unitImeis?.length) return item.unitImeis;
+  const legacy = item.productImei || product?.imei;
+  return legacy ? [legacy] : [];
 }
 
 export default function SalesScreen() {
   const { t } = useLanguage();
+  const { colors: c } = useTheme();
   const { products, addProduct, fetchProducts } = useProducts();
   const { addSale, fetchSales } = useSales();
   const { customers } = useCustomers();
@@ -58,8 +99,14 @@ export default function SalesScreen() {
     name: '', brand: '', category: 'Accessories', buyingPrice: 0,
     sellingPrice: 0, pieces: 1, lowStockAlert: 1, imei: '',
   });
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [completing, setCompleting] = useState(false);
+  const { unitsByProduct } = useAvailableUnits();
   const { width } = useWindowDimensions();
-  const styles = createStyles(width);
+  // StyleSheet.create used to re-run on every keystroke at the till; the
+  // stylesheet only depends on width.
+  const styles = useMemo(() => createStyles(width, c), [width, c]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -76,6 +123,14 @@ export default function SalesScreen() {
     product.brand.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  /**
+   * For a serialised product the cart holds the actual unit ids. They are
+   * assigned oldest-first so stock rotates, and the database re-checks them at
+   * checkout in case another till sold one in the meantime.
+   */
+  const nextUnitIds = (productId: string, quantity: number): string[] =>
+    (unitsByProduct[productId] || []).slice(0, quantity).map(unit => unit.id);
+
   const addToCart = (productId: string) => {
     const product = products.find(p => p.id === productId);
     if (!product || product.pieces <= 0) {
@@ -89,14 +144,30 @@ export default function SalesScreen() {
         Alert.alert(t('error'), 'Not enough stock available');
         return;
       }
+      const nextQuantity = existingItem.quantity + 1;
       setCart(prev => prev.map(item =>
         item.productId === productId
-          ? { ...item, quantity: item.quantity + 1 }
+          ? {
+              ...item,
+              quantity: nextQuantity,
+              unitIds: product.isSerialized ? nextUnitIds(productId, nextQuantity) : undefined,
+            }
           : item
       ));
     } else {
-      setCart(prev => [...prev, { productId, quantity: 1 }]);
+      setCart(prev => [...prev, {
+        productId,
+        quantity: 1,
+        unitIds: product.isSerialized ? nextUnitIds(productId, 1) : undefined,
+        warrantyMonths: product.isSerialized ? DEFAULT_WARRANTY_MONTHS : undefined,
+      }]);
     }
+  };
+
+  const setWarrantyMonths = (productId: string, months: number) => {
+    setCart(prev => prev.map(item =>
+      item.productId === productId ? { ...item, warrantyMonths: months } : item
+    ));
   };
 
   const removeFromCart = (productId: string) => {
@@ -105,7 +176,12 @@ export default function SalesScreen() {
       if (existingItem && existingItem.quantity > 1) {
         return prev.map(item =>
           item.productId === productId
-            ? { ...item, quantity: item.quantity - 1 }
+            ? {
+                ...item,
+                quantity: item.quantity - 1,
+                // Drop the last assigned handset so ids stay in step with count.
+                unitIds: item.unitIds?.slice(0, item.quantity - 1),
+              }
             : item
         );
       }
@@ -200,20 +276,43 @@ export default function SalesScreen() {
       return;
     }
 
-    const saved = await addProduct({
+    const isPhone = quickProduct.category === 'Phones';
+
+    const { product: saved, error: saveError } = await addProduct({
       ...quickProduct,
       name: quickProduct.name.trim(),
       brand: quickProduct.brand.trim(),
       category: quickProduct.category.trim(),
-      imei: quickProduct.imei.trim() || undefined,
+      isSerialized: isPhone,
+      // A handset's warranty runs a year by default; accessories carry none.
+      warrantyDays: isPhone ? 365 : 0,
     });
+
     if (!saved) {
-      Alert.alert(t('error'), 'Product could not be saved.');
+      Alert.alert(t('error'), saveError ?? 'Product could not be saved.');
       return;
     }
 
+    // A serialised product has no stock until its first IMEI is registered.
+    let unitIds: string[] | undefined;
+    if (isPhone) {
+      const { unit, error: unitError } = await createProductUnit({
+        productId: saved.id,
+        imei: quickProduct.imei.trim(),
+        cost: quickProduct.buyingPrice,
+      });
+
+      if (!unit) {
+        Alert.alert(t('error'), unitError === 'imeiAlreadyExists' ? t('imeiAlreadyExists')
+          : unitError === 'imeiInvalid' ? t('imeiInvalid')
+          : unitError ?? t('error'));
+        return;
+      }
+      unitIds = [unit.id];
+    }
+
     await fetchProducts();
-    setCart(prev => [...prev, { productId: saved.id, quantity: 1 }]);
+    setCart(prev => [...prev, { productId: saved.id, quantity: 1, unitIds }]);
     setQuickProduct({
       name: '', brand: '', category: 'Accessories', buyingPrice: 0,
       sellingPrice: 0, pieces: 1, lowStockAlert: 1, imei: '',
@@ -235,39 +334,60 @@ export default function SalesScreen() {
       return;
     }
 
-    // Add sale record with correct pricing
-    const result = await addSale(
+    // Mobile money is only traceable if the confirmation code is captured.
+    if (REFERENCE_METHODS.includes(paymentMethod) && !paymentReference.trim()) {
+      Alert.alert(t('error'), t('enterReference'));
+      return;
+    }
+
+    // Every handset on the cart must still have its IMEI assigned; the database
+    // re-checks, but failing here keeps the cashier out of a server round-trip.
+    const missingUnits = cart.find(item => {
+      const product = products.find(p => p.id === item.productId);
+      return product?.isSerialized && (item.unitIds?.length ?? 0) !== item.quantity;
+    });
+    if (missingUnits) {
+      const product = products.find(p => p.id === missingUnits.productId);
+      Alert.alert(t('error'), `${t('unitsRequired')}: ${product?.name ?? ''}`);
+      return;
+    }
+
+    setCompleting(true);
+    const { sale, error } = await addSale(
       {
         total,
         cashReceived,
-        change: Math.max(0, cashReceived - cashDue),
         customer_name: checkoutCustomerName.trim() || undefined,
+        paymentMethod,
+        paymentReference: paymentReference.trim() || undefined,
       },
       cart.map(item => {
         const product = products.find(p => p.id === item.productId);
-        if (!product) return { productId: item.productId, quantity: item.quantity, price: 0, buyingPrice: 0 };
-
-        const finalPrice = discountedUnitPrice(product.sellingPrice, item.discount);
+        if (!product) return { productId: item.productId, quantity: item.quantity, price: 0 };
 
         return {
           productId: item.productId,
           quantity: item.quantity,
-          price: finalPrice,
+          price: discountedUnitPrice(product.sellingPrice, item.discount),
+          unitIds: item.unitIds,
+          warrantyMonths: item.warrantyMonths,
         };
       }),
       selectedCustomer ?? undefined,
       loanAmount
     );
+    setCompleting(false);
 
-    // Show receipt
-    if (result) {
-      setCurrentSale(result);
-      setShowReceiptModal(true);
-      await fetchProducts();
-    } else {
-      Alert.alert(t('error'), 'Sale could not be completed. Your cart was kept unchanged.');
+    if (!sale) {
+      // Surface the database's own message ("Insufficient stock for Redmi 13C")
+      // rather than a generic failure the cashier cannot act on.
+      Alert.alert(t('error'), error ?? 'Sale could not be completed. Your cart was kept unchanged.');
       return;
     }
+
+    setCurrentSale(sale);
+    setShowReceiptModal(true);
+    await fetchProducts();
 
     // Reset
     setCart([]);
@@ -275,9 +395,14 @@ export default function SalesScreen() {
     setShowCheckout(false);
     setSelectedCustomer(null);
     setCheckoutCustomerName('');
+    setPaymentMethod('cash');
+    setPaymentReference('');
   };
 
-  const ProductTable = () => {
+  // Rendered as an element rather than a nested component: declaring a
+  // component inside the render body gives React a new type on every
+  // render, which unmounts and remounts the whole subtree.
+  const productTable = (() => {
     return (
       <View style={styles.tableContainer}>
         <View style={styles.tableHeader}>
@@ -296,7 +421,7 @@ export default function SalesScreen() {
             <View key={product.id} style={styles.tableRow}>
               <Text style={[styles.tableCell, { flex: 3 }]}>{product.name}</Text>
               <Text style={[styles.tableCell, { flex: 1 }]}>{product.brand}</Text>
-              <Text style={[styles.tableCell, { flex: 1, color: '#2563EB' }]}>{formatCurrency(product.sellingPrice)}</Text>
+              <Text style={[styles.tableCell, { flex: 1, color: c.primary }]}>{formatCurrency(product.sellingPrice)}</Text>
               <Text style={[styles.tableCell, { flex: 1 }]}>{product.pieces}</Text>
               <View style={{ flex: 2, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                 {quantityInCart > 0 ? (
@@ -305,7 +430,7 @@ export default function SalesScreen() {
                       style={styles.quantityButton}
                       onPress={() => removeFromCart(product.id)}
                     >
-                      <Minus size={16} color="#FFFFFF" />
+                      <Minus size={16} color={c.textInverse} />
                     </TouchableOpacity>
                     <Text style={styles.quantityText}>{quantityInCart}</Text>
                     <TouchableOpacity
@@ -313,7 +438,7 @@ export default function SalesScreen() {
                       onPress={() => addToCart(product.id)}
                       disabled={availableStock === 0}
                     >
-                      <Plus size={16} color="#FFFFFF" />
+                      <Plus size={16} color={c.textInverse} />
                     </TouchableOpacity>
                   </>
                 ) : (
@@ -322,7 +447,7 @@ export default function SalesScreen() {
                     onPress={() => addToCart(product.id)}
                     disabled={product.pieces === 0}
                   >
-                    <Plus size={16} color="#FFFFFF" />
+                    <Plus size={16} color={c.textInverse} />
                     <Text style={styles.addButtonText}>{t('addToCart')}</Text>
                   </TouchableOpacity>
                 )}
@@ -332,9 +457,13 @@ export default function SalesScreen() {
         })}
       </View>
     );
-  };
+  })();
 
-  const CartSummary = () => {
+
+  // Rendered as an element rather than a nested component: declaring a
+  // component inside the render body gives React a new type on every
+  // render, which unmounts and remounts the whole subtree.
+  const cartSummary = (() => {
     if (cart.length === 0) return null;
 
     return (
@@ -342,7 +471,7 @@ export default function SalesScreen() {
         <View style={styles.cartHeader}>
           <Text style={styles.cartTitle}>{t('cart')} ({cart.length})</Text>
           <TouchableOpacity onPress={clearCart}>
-            <Trash2 size={20} color="#DC2626" />
+            <Trash2 size={18} color={c.danger} />
           </TouchableOpacity>
         </View>
         
@@ -370,7 +499,7 @@ export default function SalesScreen() {
                        style={[styles.loanButton, item.useLoan && styles.activeLoanButton]}
                        onPress={() => applyLoan(item.productId)}
                      >
-                       <CreditCard size={16} color="#FFFFFF" />
+                       <CreditCard size={16} color={c.textInverse} />
                        <Text style={styles.loanButtonText}>Loan</Text>
                      </TouchableOpacity>
                    )}
@@ -389,6 +518,32 @@ export default function SalesScreen() {
                    Loan applied for this item
                  </Text>
                )}
+               {/* Handsets leave under a promise the shop has to honour, so the
+                   term is set per line at the till rather than per product. */}
+               {product.isSerialized && (
+                 <View style={styles.warrantyRow}>
+                   <Text style={styles.warrantyLabel}>{t('warranty')}</Text>
+                   <View style={styles.warrantyOptions}>
+                     {WARRANTY_OPTIONS.map(months => {
+                       const active = (item.warrantyMonths ?? DEFAULT_WARRANTY_MONTHS) === months;
+                       return (
+                         <TouchableOpacity
+                           key={months}
+                           style={[styles.warrantyChip, active && styles.warrantyChipActive]}
+                           onPress={() => setWarrantyMonths(item.productId, months)}
+                           accessibilityRole="radio"
+                           accessibilityState={{ selected: active }}
+                           accessibilityLabel={`${t('warranty')} ${months} ${t('months')}`}
+                         >
+                           <Text style={[styles.warrantyChipText, active && styles.warrantyChipTextActive]}>
+                             {months} {t('months')}
+                           </Text>
+                         </TouchableOpacity>
+                       );
+                     })}
+                   </View>
+                 </View>
+               )}
              </View>
            );
          })}
@@ -396,13 +551,14 @@ export default function SalesScreen() {
         <View style={styles.cartTotal}>
           <Text style={styles.cartTotalText}>{t('total')}: {formatCurrency(getCartTotal())}</Text>
           <TouchableOpacity style={styles.checkoutButton} onPress={handleCheckout}>
-            <Calculator size={16} color="#FFFFFF" />
+            <Calculator size={16} color={c.textInverse} />
             <Text style={styles.checkoutButtonText}>{t('checkout')}</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
-  };
+  })();
+
 
   const selectedCustomerData = customers.find(c => c.id === selectedCustomer);
 
@@ -443,10 +599,14 @@ export default function SalesScreen() {
       .map((item) => {
         const product = products.find((p) => p.id === item.productId);
         const productName = escapeHtml(item.productName || product?.name || 'Product');
-        const imei = escapeHtml(item.productImei || product?.imei);
+        const imeiHTML = soldImeis(item, product)
+          .map(value => `<small>IMEI: ${escapeHtml(value)}</small>`)
+          .join('');
+        const warranty = warrantyLabel(item, t);
+        const warrantyHTML = warranty ? `<small>${escapeHtml(warranty)}</small>` : '';
         return `
           <tr>
-            <td><strong>${productName}</strong>${imei ? `<small>IMEI: ${imei}</small>` : ''}</td>
+            <td><strong>${productName}</strong>${imeiHTML}${warrantyHTML}</td>
             <td class="center">${item.quantity}</td>
             <td class="money">${formatCurrency(item.price)}</td>
             <td class="money">${formatCurrency(item.quantity * item.price)}</td>
@@ -457,13 +617,13 @@ export default function SalesScreen() {
 
     return `
       <!doctype html><html><head><meta charset="utf-8"><style>
-        *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;padding:24px;background:#f4f7fb}
+        *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;padding:24px;background:#f2f0fd}
         .receipt{max-width:680px;margin:auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #dbe3ef}
-        header{padding:28px;background:#1746a2;color:#fff;text-align:center}h1{margin:0 0 8px;font-size:28px}.meta{opacity:.9;font-size:13px}
-        main{padding:26px}.customer,.notes{padding:12px 14px;background:#eff6ff;border-left:4px solid #2563eb;margin-bottom:18px}
+        header{padding:28px;background:#4A25C4;color:#fff;text-align:center}h1{margin:0 0 8px;font-size:28px}.meta{opacity:.9;font-size:13px}
+        main{padding:26px}.customer,.notes{padding:12px 14px;background:#F1ECFE;border-left:4px solid #5F33E1;margin-bottom:18px}
         table{width:100%;border-collapse:collapse;font-size:13px}th{padding:10px 8px;text-align:left;background:#edf2f7;border-bottom:2px solid #cbd5e1}
         td{padding:12px 8px;border-bottom:1px solid #e5e7eb}small{display:block;color:#64748b;margin-top:4px}.center{text-align:center}.money{text-align:right;white-space:nowrap}
-        .summary{margin:18px 0 0 auto;width:300px}.row{display:flex;justify-content:space-between;padding:6px 0}.total{font-size:18px;font-weight:700;border-top:2px solid #1746a2;margin-top:5px;padding-top:10px;color:#1746a2}
+        .summary{margin:18px 0 0 auto;width:300px}.row{display:flex;justify-content:space-between;padding:6px 0}.total{font-size:18px;font-weight:700;border-top:2px solid #4A25C4;margin-top:5px;padding-top:10px;color:#4A25C4}
         footer{text-align:center;padding:20px;background:#f8fafc;color:#64748b;font-size:12px}@media(max-width:520px){body{padding:0}.receipt{border-radius:0}.summary{width:100%}main{padding:16px}}
       </style></head>
         <body>
@@ -544,7 +704,7 @@ export default function SalesScreen() {
             onPress={onRefresh}
             disabled={refreshing}
           >
-            <RefreshCw size={20} color="#FFFFFF" />
+            <RefreshCw size={18} color={c.textInverse} />
           </TouchableOpacity>
         </View>
       </View>
@@ -555,7 +715,7 @@ export default function SalesScreen() {
           style={styles.customerButton}
           onPress={() => setShowCustomerModal(true)}
         >
-          <Users size={20} color="#FFFFFF" />
+          <Users size={18} color={c.textInverse} />
           <Text style={styles.customerButtonText}>
             {selectedCustomerData ? selectedCustomerData.name : t('selectCustomer')}
           </Text>
@@ -576,16 +736,16 @@ export default function SalesScreen() {
           placeholder={t('searchProducts')}
           value={searchTerm}
           onChangeText={setSearchTerm}
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={c.textSubtle}
         />
         <TouchableOpacity style={styles.quickAddButton} onPress={() => setShowQuickProductModal(true)}>
-          <Plus size={20} color="#FFFFFF" />
+          <Plus size={18} color={c.textInverse} />
           <Text style={styles.quickAddButtonText}>New product</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView
-        style={styles.productsList}
+        style={[styles.productsList, styles.contentColumn]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -597,11 +757,11 @@ export default function SalesScreen() {
           contentContainerStyle={styles.tableScrollContent}
           showsHorizontalScrollIndicator={width < 768}
         >
-          <ProductTable />
+          {productTable}
         </ScrollView>
       </ScrollView>
 
-      <CartSummary />
+      {cartSummary}
 
       <Modal visible={showQuickProductModal} animationType="fade" transparent statusBarTranslucent>
         <View style={styles.modalBackdrop}>
@@ -665,8 +825,16 @@ export default function SalesScreen() {
               <Text style={styles.cancelButton}>{t('cancel')}</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>{t('checkout')}</Text>
-            <TouchableOpacity onPress={completeSale}>
-              <Text style={styles.saveButton}>{t('completeSale')}</Text>
+            <TouchableOpacity
+              onPress={completeSale}
+              disabled={completing}
+              accessibilityRole="button"
+              accessibilityLabel={t('completeSale')}
+              accessibilityState={{ disabled: completing, busy: completing }}
+            >
+              <Text style={[styles.saveButton, completing && styles.saveButtonDisabled]}>
+                {completing ? t('syncing') : t('completeSale')}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -709,19 +877,62 @@ export default function SalesScreen() {
                   onChangeText={setCheckoutCustomerName}
                   placeholder={t('enterCustomerReceipt')}
                   autoCapitalize="words"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={c.textSubtle}
                 />
               </View>
               <Text style={styles.sectionTitle}>{t('payment')}</Text>
+
+              {/* Mobile money is the default rail in this market, so the method
+                  is picked explicitly rather than assumed to be cash. */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('cash')} (TSH)</Text>
+                <Text style={styles.inputLabel}>{t('paymentMethod')}</Text>
+                <View style={styles.paymentGrid}>
+                  {PAYMENT_METHODS.map(method => {
+                    const selected = paymentMethod === method.value;
+                    return (
+                      <TouchableOpacity
+                        key={method.value}
+                        onPress={() => setPaymentMethod(method.value)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected }}
+                        accessibilityLabel={t(method.labelKey)}
+                        style={[styles.paymentChip, selected && styles.paymentChipActive]}
+                      >
+                        <Text style={[styles.paymentChipText, selected && styles.paymentChipTextActive]}>
+                          {t(method.labelKey)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {REFERENCE_METHODS.includes(paymentMethod) && (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>{t('transactionRef')} *</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={paymentReference}
+                    onChangeText={setPaymentReference}
+                    placeholder={t('enterReference')}
+                    autoCapitalize="characters"
+                    placeholderTextColor={c.textSubtle}
+                    accessibilityLabel={t('transactionRef')}
+                  />
+                </View>
+              )}
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
+                  {paymentMethod === 'cash' ? `${t('cash')} (TSH)` : `${t('amount')} (TSH)`}
+                </Text>
                 <TextInput
                   style={styles.textInput}
                   value={cashReceived.toString()}
                   onChangeText={(text) => setCashReceived(roundMoney(Number(text.replace(/[^0-9]/g, ''))))}
                   placeholder="0"
                   keyboardType="numeric"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={c.textSubtle}
                 />
               </View>
               
@@ -729,7 +940,7 @@ export default function SalesScreen() {
                 <View style={styles.changeInfo}>
                   <Text style={styles.changeLabel}>{t('change')}:</Text>
                   <Text style={[styles.changeAmount, { 
-                    color: cashReceived >= getCashDue() ? '#16A34A' : '#DC2626' 
+                    color: cashReceived >= getCashDue() ? c.success : c.danger 
                   }]}> 
                     {formatCurrency(Math.max(0, cashReceived - getCashDue()))}
                   </Text>
@@ -818,7 +1029,7 @@ export default function SalesScreen() {
                     onChangeText={(text) => setDiscountPercentage(Number(text) || 0)}
                     placeholder="Enter discount % (e.g., 10)"
                     keyboardType="numeric"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={c.textSubtle}
                   />
                 </View>
 
@@ -859,7 +1070,7 @@ export default function SalesScreen() {
                 style={styles.downloadButton}
                 onPress={downloadReceiptAsPDF}
               >
-                <Download size={16} color="#FFFFFF" />
+                <Download size={16} color={c.textInverse} />
                 <Text style={styles.downloadButtonText}>PDF</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => {
@@ -889,9 +1100,19 @@ export default function SalesScreen() {
                     const product = products.find(p => p.id === item.productId);
                     return (
                       <View key={index} style={styles.receiptItem}>
-                        <Text style={styles.receiptItemName}>
-                          {item.productName || product?.name || 'Product'}
-                        </Text>
+                        <View style={styles.receiptItemMain}>
+                          <Text style={styles.receiptItemName}>
+                            {item.productName || product?.name || 'Product'}
+                          </Text>
+                          {soldImeis(item, product).map(imei => (
+                            <Text key={imei} style={styles.receiptItemImei} selectable>
+                              IMEI: {imei}
+                            </Text>
+                          ))}
+                          {warrantyLabel(item, t) ? (
+                            <Text style={styles.receiptItemImei}>{warrantyLabel(item, t)}</Text>
+                          ) : null}
+                        </View>
                         <Text style={styles.receiptItemDetails}>
                           {item.quantity} x {formatCurrency(item.price)} = {formatCurrency(item.quantity * item.price)}
                         </Text>
@@ -929,7 +1150,7 @@ export default function SalesScreen() {
                     value={receiptSignature}
                     onChangeText={setReceiptSignature}
                     placeholder="Enter signature/name"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={c.textSubtle}
                   />
                 </View>
 
@@ -942,7 +1163,7 @@ export default function SalesScreen() {
                     placeholder="Add any notes or description"
                     multiline
                     numberOfLines={3}
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={c.textSubtle}
                   />
                 </View>
 
@@ -960,19 +1181,27 @@ export default function SalesScreen() {
   );
 }
 
-const createStyles = (viewportWidth: number) => {
+const createStyles = (viewportWidth: number, c: Palette) => {
   const width = Math.min(Math.max(viewportWidth, 320), 480);
   return StyleSheet.create({
+  // Content column cap. These screens size their interior from a viewport
+  // clamped to 480px, so without a max width a desktop rendered phone-scale
+  // text stretched across the whole monitor.
+  contentColumn: {
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH.wide,
+    alignSelf: 'center',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: c.background,
   },
   header: {
     padding: width * 0.03,
     paddingTop: width * 0.03,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
   },
   headerContent: {
     flexDirection: 'row',
@@ -980,14 +1209,14 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
   },
   title: {
-    fontSize: width * 0.06,
+    fontSize: fontSize.xxl,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   refreshButton: {
     padding: width * 0.02,
     borderRadius: width * 0.02,
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
   },
   refreshingButton: {
     opacity: 0.6,
@@ -997,7 +1226,7 @@ const createStyles = (viewportWidth: number) => {
     marginTop: 0,
   },
   customerButton: {
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: width * 0.03,
@@ -1006,36 +1235,36 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.02,
   },
   customerButtonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.04,
+    color: c.textInverse,
+    fontSize: fontSize.md,
     fontWeight: '600',
   },
   customerInfo: {
     marginTop: width * 0.02,
     padding: width * 0.03,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     borderRadius: width * 0.025,
   },
   customerName: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   customerBalance: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     marginTop: width * 0.01,
   },
   searchInput: {
     margin: width * 0.03,
     paddingHorizontal: width * 0.03,
     paddingVertical: width * 0.025,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.025,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    fontSize: width * 0.04,
-    color: '#111827',
+    borderColor: c.border,
+    fontSize: fontSize.md,
+    color: c.text,
   },
   searchActions: {
     flexDirection: viewportWidth < 600 ? 'column' : 'row',
@@ -1052,15 +1281,15 @@ const createStyles = (viewportWidth: number) => {
     minHeight: 48,
     paddingHorizontal: width * 0.04,
     borderRadius: width * 0.025,
-    backgroundColor: '#16A34A',
+    backgroundColor: c.success,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
   quickAddButtonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.035,
+    color: c.textInverse,
+    fontSize: fontSize.sm,
     fontWeight: '700',
   },
   quickCategories: {
@@ -1071,20 +1300,20 @@ const createStyles = (viewportWidth: number) => {
     flex: 1,
     padding: width * 0.03,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
     alignItems: 'center',
   },
   quickCategoryActive: {
-    backgroundColor: '#DBEAFE',
-    borderColor: '#2563EB',
+    backgroundColor: c.primaryTint,
+    borderColor: c.primary,
   },
   quickCategoryText: {
-    color: '#374151',
+    color: c.textMuted,
     fontWeight: '600',
   },
   quickCategoryTextActive: {
-    color: '#1D4ED8',
+    color: c.primaryPressed,
   },
   productsList: {
     flex: 1,
@@ -1098,7 +1327,7 @@ const createStyles = (viewportWidth: number) => {
     paddingBottom: width * 0.03,
   },
   productCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.03,
     padding: width * 0.03,
     marginBottom: width * 0.025,
@@ -1115,25 +1344,25 @@ const createStyles = (viewportWidth: number) => {
     flex: 1,
   },
   productName: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.005,
   },
   productBrand: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     marginBottom: width * 0.01,
   },
   productPrice: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: '600',
-    color: '#2563EB',
+    color: c.primary,
     marginBottom: width * 0.005,
   },
   stockInfo: {
-    fontSize: width * 0.03,
-    color: '#9CA3AF',
+    fontSize: fontSize.sm,
+    color: c.textSubtle,
   },
   quantityControls: {
     flexDirection: 'row',
@@ -1141,7 +1370,7 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.025,
   },
   quantityButton: {
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
     width: width * 0.08,
     height: width * 0.08,
     borderRadius: width * 0.04,
@@ -1149,17 +1378,17 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
   },
   disabledButton: {
-    backgroundColor: '#9CA3AF',
+    backgroundColor: c.textSubtle,
   },
   quantityText: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     minWidth: width * 0.06,
     textAlign: 'center',
   },
   addButton: {
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: width * 0.03,
@@ -1168,12 +1397,12 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.01,
   },
   addButtonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.035,
+    color: c.textInverse,
+    fontSize: fontSize.sm,
     fontWeight: '600',
   },
   cartSummary: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     margin: width * 0.03,
     padding: width * 0.03,
     borderRadius: width * 0.03,
@@ -1190,9 +1419,9 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.025,
   },
   cartTitle: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   cartItem: {
     marginBottom: width * 0.02,
@@ -1204,9 +1433,9 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.01,
   },
   cartItemName: {
-    fontSize: width * 0.035,
+    fontSize: fontSize.sm,
     fontWeight: '600',
-    color: '#111827',
+    color: c.text,
     flex: 1,
   },
   itemActions: {
@@ -1214,7 +1443,7 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.02,
   },
   discountButton: {
-    backgroundColor: '#16A34A',
+    backgroundColor: c.success,
     width: width * 0.08,
     height: width * 0.08,
     borderRadius: width * 0.04,
@@ -1222,12 +1451,12 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
   },
   discountButtonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.04,
+    color: c.textInverse,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
   },
   loanButton: {
-    backgroundColor: '#7C3AED',
+    backgroundColor: c.info,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: width * 0.02,
@@ -1236,38 +1465,68 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.01,
   },
   activeLoanButton: {
-    backgroundColor: '#D97706',
+    backgroundColor: c.warning,
   },
   loanButtonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.03,
+    color: c.textInverse,
+    fontSize: fontSize.sm,
     fontWeight: '600',
   },
   loanDiscountText: {
-    fontSize: width * 0.03,
-    color: '#7C3AED',
+    fontSize: fontSize.sm,
+    color: c.info,
     fontStyle: 'italic',
     marginTop: width * 0.005,
   },
   discountText: {
-    fontSize: width * 0.03,
-    color: '#16A34A',
+    fontSize: fontSize.sm,
+    color: c.success,
     fontStyle: 'italic',
     marginTop: width * 0.005,
   },
+  warrantyRow: {
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  warrantyLabel: {
+    fontSize: fontSize.xs,
+    color: c.textMuted,
+    fontWeight: fontWeight.semibold,
+  },
+  warrantyOptions: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  warrantyChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.pill,
+    backgroundColor: c.primaryTint,
+  },
+  warrantyChipActive: {
+    backgroundColor: c.primary,
+  },
+  warrantyChipText: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    color: c.primary,
+  },
+  warrantyChipTextActive: {
+    color: c.textInverse,
+  },
   loanText: {
-    fontSize: width * 0.03,
-    color: '#D97706',
+    fontSize: fontSize.sm,
+    color: c.warning,
     fontStyle: 'italic',
     marginTop: width * 0.005,
   },
   cartItemDetails: {
-    fontSize: width * 0.03,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   cartTotal: {
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: c.border,
     paddingTop: width * 0.025,
     marginTop: width * 0.02,
     flexDirection: 'row',
@@ -1275,12 +1534,12 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
   },
   cartTotalText: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   checkoutButton: {
-    backgroundColor: '#16A34A',
+    backgroundColor: c.success,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: width * 0.03,
@@ -1289,8 +1548,8 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.01,
   },
   checkoutButtonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.035,
+    color: c.textInverse,
+    fontSize: fontSize.sm,
     fontWeight: '600',
   },
   modalContainer: {
@@ -1298,7 +1557,7 @@ const createStyles = (viewportWidth: number) => {
     maxWidth: 760,
     maxHeight: '92%',
     alignSelf: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: 18,
     overflow: 'hidden',
   },
@@ -1316,21 +1575,51 @@ const createStyles = (viewportWidth: number) => {
     padding: width * 0.03,
     paddingTop: width * 0.03,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
   },
   modalTitle: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   cancelButton: {
-    fontSize: width * 0.04,
-    color: '#6B7280',
+    fontSize: fontSize.md,
+    color: c.textMuted,
   },
   saveButton: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: '600',
-    color: '#2563EB',
+    color: c.primary,
+  },
+  saveButtonDisabled: {
+    color: c.textSubtle,
+  },
+  paymentGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  paymentChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: c.borderStrong,
+    backgroundColor: c.surface,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  paymentChipActive: {
+    backgroundColor: c.primary,
+    borderColor: c.primary,
+  },
+  paymentChipText: {
+    color: c.textMuted,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  paymentChipTextActive: {
+    color: c.textInverse,
   },
   modalContent: {
     flex: 1,
@@ -1340,33 +1629,33 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.05,
   },
   sectionTitle: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.03,
   },
   checkoutItem: {
     marginBottom: width * 0.025,
   },
   checkoutItemName: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: '600',
-    color: '#111827',
+    color: c.text,
   },
   checkoutItemPrice: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   checkoutTotal: {
     borderTopWidth: 2,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: c.border,
     paddingTop: width * 0.025,
     marginTop: width * 0.025,
   },
   checkoutTotalText: {
-    fontSize: width * 0.05,
+    fontSize: fontSize.xl,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     textAlign: 'right',
   },
   paymentSection: {
@@ -1376,41 +1665,41 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.03,
   },
   inputLabel: {
-    fontSize: width * 0.035,
+    fontSize: fontSize.sm,
     fontWeight: '600',
-    color: '#374151',
+    color: c.textMuted,
     marginBottom: width * 0.02,
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
     padding: width * 0.03,
-    fontSize: width * 0.04,
-    color: '#111827',
-    backgroundColor: '#FFFFFF',
+    fontSize: fontSize.md,
+    color: c.text,
+    backgroundColor: c.surface,
   },
   changeInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     padding: width * 0.03,
     borderRadius: width * 0.025,
   },
   changeLabel: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: '600',
-    color: '#374151',
+    color: c.textMuted,
   },
   changeAmount: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
   },
   tableContainer: {
     minWidth: viewportWidth < 768 ? 720 : '100%',
     width: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.03,
     marginBottom: 0,
     shadowColor: '#000',
@@ -1421,16 +1710,16 @@ const createStyles = (viewportWidth: number) => {
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     paddingVertical: width * 0.025,
     paddingHorizontal: width * 0.03,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
   },
   tableHeaderText: {
-    fontSize: width * 0.035,
+    fontSize: fontSize.sm,
     fontWeight: 'bold',
-    color: '#374151',
+    color: c.textMuted,
     paddingHorizontal: 6,
   },
   tableRow: {
@@ -1438,79 +1727,79 @@ const createStyles = (viewportWidth: number) => {
     paddingVertical: width * 0.025,
     paddingHorizontal: width * 0.03,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: c.surfaceSunken,
   },
   tableCell: {
-    fontSize: width * 0.035,
-    color: '#111827',
+    fontSize: fontSize.sm,
+    color: c.text,
     paddingHorizontal: 6,
   },
   customerOption: {
     padding: width * 0.04,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: c.surfaceSunken,
   },
   selectedCustomer: {
-    backgroundColor: '#EBF4FF',
+    backgroundColor: c.primaryTint,
   },
   customerOptionText: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: '600',
-    color: '#111827',
+    color: c.text,
   },
   selectedCustomerText: {
-    color: '#2563EB',
+    color: c.primary,
   },
   customerOptionDetails: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     marginTop: width * 0.01,
   },
   loanProductName: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.02,
   },
   loanProductPrice: {
-    fontSize: width * 0.04,
-    color: '#6B7280',
+    fontSize: fontSize.md,
+    color: c.textMuted,
     marginBottom: width * 0.03,
   },
   loanCalculation: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     padding: width * 0.03,
     borderRadius: width * 0.025,
     marginTop: width * 0.03,
   },
   loanCalculationText: {
-    fontSize: width * 0.04,
-    color: '#111827',
+    fontSize: fontSize.md,
+    color: c.text,
     marginBottom: width * 0.01,
   },
   receiptHeader: {
     alignItems: 'center',
     marginBottom: width * 0.05,
     padding: width * 0.04,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     borderRadius: width * 0.03,
   },
   receiptTitle: {
-    fontSize: width * 0.06,
+    fontSize: fontSize.xxl,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.02,
   },
   receiptNumber: {
     marginTop: 6,
-    fontSize: width * 0.03,
+    fontSize: fontSize.sm,
     fontWeight: '700',
     letterSpacing: 1,
-    color: '#2563EB',
+    color: c.primary,
   },
   receiptDate: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptItems: {
     marginBottom: width * 0.05,
@@ -1521,22 +1810,29 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
     paddingVertical: width * 0.02,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: c.surfaceSunken,
   },
-  receiptItemName: {
-    fontSize: width * 0.04,
-    fontWeight: '600',
-    color: '#111827',
+  receiptItemMain: {
     flex: 1,
   },
+  receiptItemName: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: c.text,
+  },
+  receiptItemImei: {
+    fontSize: fontSize.xs,
+    color: c.textMuted,
+    marginTop: 2,
+  },
   receiptItemDetails: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptSummary: {
     marginBottom: width * 0.05,
     padding: width * 0.04,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     borderRadius: width * 0.03,
   },
   receiptTotal: {
@@ -1546,14 +1842,14 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.02,
   },
   receiptTotalLabel: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   receiptTotalAmount: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#16A34A',
+    color: c.success,
   },
   receiptPayment: {
     flexDirection: 'row',
@@ -1562,12 +1858,12 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.02,
   },
   receiptPaymentLabel: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptPaymentAmount: {
-    fontSize: width * 0.035,
-    color: '#111827',
+    fontSize: fontSize.sm,
+    color: c.text,
   },
   receiptChange: {
     flexDirection: 'row',
@@ -1575,64 +1871,64 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
   },
   receiptChangeLabel: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptChangeAmount: {
-    fontSize: width * 0.035,
-    color: '#111827',
+    fontSize: fontSize.sm,
+    color: c.text,
   },
   receiptCustomer: {
     marginBottom: width * 0.05,
     padding: width * 0.04,
-    backgroundColor: '#EBF4FF',
+    backgroundColor: c.primaryTint,
     borderRadius: width * 0.03,
   },
   receiptCustomerName: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: '600',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.01,
   },
   receiptCustomerPhone: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptSignatureSection: {
     marginBottom: width * 0.05,
   },
   signatureInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
     padding: width * 0.03,
-    fontSize: width * 0.04,
-    color: '#111827',
-    backgroundColor: '#FFFFFF',
+    fontSize: fontSize.md,
+    color: c.text,
+    backgroundColor: c.surface,
   },
   receiptDescriptionSection: {
     marginBottom: width * 0.05,
   },
   descriptionInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
     padding: width * 0.03,
-    fontSize: width * 0.04,
-    color: '#111827',
-    backgroundColor: '#FFFFFF',
+    fontSize: fontSize.md,
+    color: c.text,
+    backgroundColor: c.surface,
     minHeight: width * 0.2,
     textAlignVertical: 'top',
   },
   receiptFooter: {
     alignItems: 'center',
     padding: width * 0.04,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     borderRadius: width * 0.03,
   },
   receiptFooterText: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     textAlign: 'center',
     marginBottom: width * 0.01,
   },
@@ -1642,7 +1938,7 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.02,
   },
   downloadButton: {
-    backgroundColor: '#16A34A',
+    backgroundColor: c.success,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: width * 0.03,
@@ -1651,8 +1947,8 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.01,
   },
   downloadButtonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.035,
+    color: c.textInverse,
+    fontSize: fontSize.sm,
     fontWeight: '600',
   },
   });

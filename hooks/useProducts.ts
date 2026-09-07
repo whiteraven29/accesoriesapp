@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../utils/supabase';
 
 export interface Product {
-  imei?: string;
   id: string;
   name: string;
   brand: string;
@@ -11,82 +10,69 @@ export interface Product {
   sellingPrice: number;
   pieces: number;
   lowStockAlert: number;
+  /**
+   * Handsets are tracked as individual IMEI units in `product_units`; for those
+   * rows `pieces` is maintained by a database trigger and must not be written
+   * directly.
+   */
+  isSerialized: boolean;
+  warrantyDays: number;
+  supplierId?: string;
+  /** Legacy single-IMEI column, kept so old rows still display. */
+  imei?: string;
   created_at: string;
 }
 
+export type ProductInput = Omit<
+  Product,
+  'id' | 'created_at' | 'isSerialized' | 'warrantyDays' | 'supplierId' | 'imei'
+> & {
+  isSerialized?: boolean;
+  warrantyDays?: number;
+  supplierId?: string;
+  imei?: string;
+};
+
+/**
+ * One place that turns a database row into a Product. The previous version
+ * repeated this mapping in six places — two realtime handlers, the fetch, and
+ * three mutations — which is how `brand` ended up defaulting in some paths and
+ * not others.
+ */
+const mapProduct = (row: any): Product => ({
+  id: row.id,
+  name: row.name,
+  brand: row.brand ?? '',
+  category: row.category ?? '',
+  buyingPrice: Number(row.buying_price ?? 0),
+  sellingPrice: Number(row.selling_price ?? 0),
+  pieces: Number(row.pieces ?? 0),
+  lowStockAlert: Number(row.low_stock_alert ?? 0),
+  isSerialized: Boolean(row.is_serialized),
+  warrantyDays: Number(row.warranty_days ?? 0),
+  supplierId: row.supplier_id ?? undefined,
+  imei: row.imei ?? undefined,
+  created_at: row.created_at,
+});
+
+const toRow = (input: Partial<ProductInput>) => ({
+  ...(input.name !== undefined && { name: input.name }),
+  ...(input.brand !== undefined && { brand: input.brand }),
+  ...(input.category !== undefined && { category: input.category }),
+  ...(input.buyingPrice !== undefined && { buying_price: input.buyingPrice }),
+  ...(input.sellingPrice !== undefined && { selling_price: input.sellingPrice }),
+  ...(input.lowStockAlert !== undefined && { low_stock_alert: input.lowStockAlert }),
+  ...(input.isSerialized !== undefined && { is_serialized: input.isSerialized }),
+  ...(input.warrantyDays !== undefined && { warranty_days: input.warrantyDays }),
+  ...(input.supplierId !== undefined && { supplier_id: input.supplierId || null }),
+  ...(input.imei !== undefined && { imei: input.imei || null }),
+});
+
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Fetch products from Supabase
-  useEffect(() => {
-    fetchProducts();
-    
-    // Subscribe to real-time updates
-    const channel = supabase
-      .channel('products-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'products',
-        },
-        (payload) => {
-          const newProduct = {
-            ...payload.new,
-            brand: payload.new.brand ?? '',
-            category: payload.new.category ?? '',
-            buyingPrice: payload.new.buying_price,
-            sellingPrice: payload.new.selling_price,
-            lowStockAlert: payload.new.low_stock_alert,
-          };
-          setProducts((prev) => prev.some(product => product.id === payload.new.id)
-            ? prev
-            : [newProduct as Product, ...prev]);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'products',
-        },
-        (payload) => {
-          const updatedProduct = {
-            ...payload.new,
-            brand: payload.new.brand ?? '',
-            category: payload.new.category ?? '',
-            buyingPrice: payload.new.buying_price,
-            sellingPrice: payload.new.selling_price,
-            lowStockAlert: payload.new.low_stock_alert,
-          };
-          setProducts((prev) =>
-            prev.map((product) =>
-              product.id === payload.new.id ? (updatedProduct as Product) : product
-            )
-          );
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'products',
-        },
-        (payload) => {
-          setProducts((prev) => prev.filter((product) => product.id !== payload.old.id));
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     const { data, error } = await supabase
       .from('products')
       .select('*')
@@ -94,39 +80,56 @@ export function useProducts() {
 
     if (error) {
       console.error('Error fetching products:', error);
+      setLoading(false);
       return;
     }
 
-    // Map database fields to interface fields
-    const mappedProducts = (data || []).map(product => ({
-      ...product,
-      brand: product.brand ?? '',
-      category: product.category ?? '',
-      buyingPrice: Number(product.buying_price),
-      sellingPrice: Number(product.selling_price),
-      lowStockAlert: product.low_stock_alert,
-    }));
+    setProducts((data || []).map(mapProduct));
+    setLoading(false);
+  }, []);
 
-    setProducts(mappedProducts);
-  };
+  useEffect(() => {
+    fetchProducts();
 
-  const addProduct = async (productData: Omit<Product, 'id' | 'created_at'>) => {
+    // A single subscription for all row events; the previous code registered
+    // separate INSERT and UPDATE handlers that each re-implemented the mapping.
+    const channel = supabase
+      .channel('products-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, payload => {
+        setProducts(prev => {
+          if (payload.eventType === 'DELETE') {
+            return prev.filter(product => product.id !== (payload.old as any).id);
+          }
+
+          const next = mapProduct(payload.new);
+          const exists = prev.some(product => product.id === next.id);
+          return exists
+            ? prev.map(product => (product.id === next.id ? next : product))
+            : [next, ...prev];
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchProducts]);
+
+  const addProduct = async (
+    productData: ProductInput,
+  ): Promise<{ product: Product | null; error: string | null }> => {
     const { data: user } = await supabase.auth.getUser();
-    if (!user.user) return null;
+    if (!user.user) return { product: null, error: 'Not signed in' };
 
     const { data, error } = await supabase
       .from('products')
       .insert([
         {
           user_id: user.user.id,
-          name: productData.name,
-          brand: productData.brand,
-          category: productData.category,
-          buying_price: productData.buyingPrice,
-          selling_price: productData.sellingPrice,
-          pieces: productData.pieces,
-          low_stock_alert: productData.lowStockAlert,
-          imei: productData.imei, // Include IMEI
+          ...toRow(productData),
+          // Serialised stock starts empty: the count comes from registered
+          // IMEI units, not from a number typed into the form.
+          pieces: productData.isSerialized ? 0 : productData.pieces,
         },
       ])
       .select()
@@ -134,29 +137,25 @@ export function useProducts() {
 
     if (error) {
       console.error('Error adding product:', error);
-      return null;
+      return { product: null, error: error.message };
     }
-
-    return {
-      ...data,
-      buyingPrice: data.buying_price,
-      sellingPrice: data.selling_price,
-      lowStockAlert: data.low_stock_alert,
-    };
+    return { product: mapProduct(data), error: null };
   };
 
-  const updateProduct = async (id: string, productData: Omit<Product, 'id' | 'created_at'>) => {
+  const updateProduct = async (
+    id: string,
+    productData: Partial<ProductInput>,
+  ): Promise<{ product: Product | null; error: string | null }> => {
+    const existing = products.find(product => product.id === id);
+
     const { data, error } = await supabase
       .from('products')
       .update({
-        name: productData.name,
-        brand: productData.brand,
-        category: productData.category,
-        buying_price: productData.buyingPrice,
-        selling_price: productData.sellingPrice,
-        pieces: productData.pieces,
-        low_stock_alert: productData.lowStockAlert,
-        imei: productData.imei, // Include IMEI
+        ...toRow(productData),
+        // Never overwrite a trigger-maintained count.
+        ...(productData.pieces !== undefined && !existing?.isSerialized
+          ? { pieces: productData.pieces }
+          : {}),
       })
       .eq('id', id)
       .select()
@@ -164,36 +163,28 @@ export function useProducts() {
 
     if (error) {
       console.error('Error updating product:', error);
-      return null;
+      return { product: null, error: error.message };
     }
-
-    return {
-      ...data,
-      buyingPrice: data.buying_price,
-      sellingPrice: data.selling_price,
-      lowStockAlert: data.low_stock_alert,
-    };
+    return { product: mapProduct(data), error: null };
   };
 
-  const deleteProduct = async (id: string) => {
-    const { error } = await supabase
-      .from('products')
-      .delete()
-      .eq('id', id);
-
+  const deleteProduct = async (id: string): Promise<boolean> => {
+    const { error } = await supabase.from('products').delete().eq('id', id);
     if (error) {
       console.error('Error deleting product:', error);
       return false;
     }
-
     return true;
   };
 
-  const getProductById = (id: string) => {
-    return products.find(product => product.id === id);
-  };
+  const getProductById = (id: string) => products.find(product => product.id === id);
 
   const updateProductStock = async (id: string, newStock: number) => {
+    const target = products.find(product => product.id === id);
+    if (target?.isSerialized) {
+      return { product: null, error: 'Serialised stock changes by adding or removing IMEI units' };
+    }
+
     const { data, error } = await supabase
       .from('products')
       .update({ pieces: newStock })
@@ -203,20 +194,21 @@ export function useProducts() {
 
     if (error) {
       console.error('Error updating product stock:', error);
-      return null;
+      return { product: null, error: error.message };
     }
-
-    // Map the returned data to match the interface
-    return {
-      ...data,
-      buyingPrice: data.buying_price,
-      sellingPrice: data.selling_price,
-      lowStockAlert: data.low_stock_alert,
-    };
+    return { product: mapProduct(data), error: null };
   };
+
+  const lowStockProducts = products.filter(
+    product => !product.isSerialized || product.pieces > 0
+      ? product.pieces <= product.lowStockAlert
+      : true,
+  );
 
   return {
     products,
+    loading,
+    lowStockProducts,
     addProduct,
     updateProduct,
     deleteProduct,

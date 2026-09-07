@@ -1,13 +1,116 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, useWindowDimensions } from 'react-native';
 import { Users, Plus, Search, CreditCard as Edit, Trash2, CreditCard, DollarSign, User, RefreshCw } from 'lucide-react-native';
+import { CONTENT_MAX_WIDTH } from '../../constants/layout';
+import { Palette, fontSize, fontWeight, radius, spacing } from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
-import { useCustomers } from '../../hooks/useCustomers';
+import { useCustomers, ContactType } from '../../hooks/useCustomers';
 import { roundMoney } from '../../utils/calculations';
+
+/**
+ * Customer row. Hoisted out of the screen body: as a nested declaration React
+ * saw a new component type each render and remounted every card in the list.
+ */
+function CustomerCard({
+  customer,
+  styles,
+  c,
+  t,
+  onEdit,
+  onDelete,
+  onLoan,
+}: {
+  customer: any;
+  styles: ReturnType<typeof createStyles>;
+  c: Palette;
+  t: (key: string) => string;
+  onEdit: (customer: any) => void;
+  onDelete: (id: string) => void;
+  onLoan: (customer: any, mode: 'pay' | 'add') => void;
+}) {
+  const hasLoan = customer.loanBalance > 0;
+
+  return (
+    <View style={[styles.customerCard, hasLoan && styles.customerWithLoan]}>
+      <View style={styles.customerHeader}>
+        <View style={styles.customerAvatar}>
+          <User size={20} color={c.primary} />
+        </View>
+        <View style={styles.customerInfo}>
+          <Text style={styles.customerName}>{customer.name}</Text>
+          <Text style={styles.customerPhone}>{customer.phone}</Text>
+          {customer.email && (
+            <Text style={styles.customerEmail}>{customer.email}</Text>
+          )}
+        </View>
+        <View style={styles.customerActions}>
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={() => onEdit(customer)}
+          >
+            <Edit size={16} color={c.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={() => onDelete(customer.id)}
+          >
+            <Trash2 size={16} color={c.danger} />
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      <View style={styles.customerDetails}>
+        <View style={styles.customerStats}>
+          <View style={styles.stat}>
+            <Text style={styles.statLabel}>{t('loyaltyPoints')}</Text>
+            <Text style={styles.statValue}>{customer.loyaltyPoints}</Text>
+          </View>
+          <View style={styles.stat}>
+            <Text style={styles.statLabel}>{t('loanBalance')}</Text>
+            <Text style={[styles.statValue, hasLoan && styles.loanAmount]}>
+              {formatCurrency(customer.loanBalance)}
+            </Text>
+          </View>
+        </View>
+        
+        {hasLoan && (
+          <View style={styles.loanActions}>
+            <TouchableOpacity 
+              style={styles.loanButton}
+              onPress={() => onLoan(customer, 'pay')}
+            >
+              <CreditCard size={16} color={c.success} />
+              <Text style={styles.loanButtonText}>{t('payLoan')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.loanButton, styles.addLoanButton]}
+              onPress={() => onLoan(customer, 'add')}
+            >
+              <DollarSign size={16} color={c.warning} />
+              <Text style={[styles.loanButtonText, styles.addLoanText]}>{t('addLoan')}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        
+        {!hasLoan && (
+          <TouchableOpacity 
+            style={styles.addLoanOnlyButton}
+            onPress={() => onLoan(customer, 'add')}
+          >
+            <DollarSign size={16} color={c.primary} />
+            <Text style={styles.addLoanOnlyText}>{t('addLoan')}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
 
 export default function CustomersScreen() {
   const { t } = useLanguage();
+  const { colors: c } = useTheme();
   const { customers, addCustomer, updateCustomer, deleteCustomer, addLoan, payLoan, fetchCustomers } = useCustomers();
   const { width } = useWindowDimensions();
   const [searchTerm, setSearchTerm] = useState('');
@@ -24,7 +127,10 @@ export default function CustomersScreen() {
     phone: '',
     email: '',
     address: '',
+    contactType: 'customer' as ContactType,
   });
+  /** Which side of the book to show: walk-in buyers, or the winga. */
+  const [typeFilter, setTypeFilter] = useState<ContactType>('customer');
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -38,10 +144,14 @@ export default function CustomersScreen() {
   }, [fetchCustomers]);
 
   const filteredCustomers = customers.filter(customer =>
-    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.phone.includes(searchTerm) ||
-    customer.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (customer.contactType ?? 'customer') === typeFilter &&
+    (customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.phone.includes(searchTerm) ||
+      customer.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const countOfType = (type: ContactType) =>
+    customers.filter(customer => (customer.contactType ?? 'customer') === type).length;
 
   const handleSaveCustomer = async () => {
     if (!newCustomer.name || !newCustomer.phone) {
@@ -67,6 +177,8 @@ export default function CustomersScreen() {
       phone: '',
       email: '',
       address: '',
+      // A new contact defaults to whichever list is being viewed.
+      contactType: typeFilter,
     });
     setEditingCustomer(null);
     setShowAddModal(false);
@@ -78,6 +190,7 @@ export default function CustomersScreen() {
       phone: customer.phone,
       email: customer.email,
       address: customer.address,
+      contactType: (customer.contactType as ContactType) ?? 'customer',
     });
     setEditingCustomer(customer);
     setShowAddModal(true);
@@ -132,87 +245,9 @@ export default function CustomersScreen() {
     setPaymentAmount(0);
   };
 
-  const CustomerCard = ({ customer }: { customer: any }) => {
-    const hasLoan = customer.loanBalance > 0;
-    const styles = createStyles(width);
 
-    return (
-      <View style={[styles.customerCard, hasLoan && styles.customerWithLoan]}>
-        <View style={styles.customerHeader}>
-          <View style={styles.customerAvatar}>
-            <User size={24} color="#2563EB" />
-          </View>
-          <View style={styles.customerInfo}>
-            <Text style={styles.customerName}>{customer.name}</Text>
-            <Text style={styles.customerPhone}>{customer.phone}</Text>
-            {customer.email && (
-              <Text style={styles.customerEmail}>{customer.email}</Text>
-            )}
-          </View>
-          <View style={styles.customerActions}>
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={() => handleEditCustomer(customer)}
-            >
-              <Edit size={16} color="#6B7280" />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={() => handleDeleteCustomer(customer.id)}
-            >
-              <Trash2 size={16} color="#DC2626" />
-            </TouchableOpacity>
-          </View>
-        </View>
-        
-        <View style={styles.customerDetails}>
-          <View style={styles.customerStats}>
-            <View style={styles.stat}>
-              <Text style={styles.statLabel}>{t('loyaltyPoints')}</Text>
-              <Text style={styles.statValue}>{customer.loyaltyPoints}</Text>
-            </View>
-            <View style={styles.stat}>
-              <Text style={styles.statLabel}>{t('loanBalance')}</Text>
-              <Text style={[styles.statValue, hasLoan && styles.loanAmount]}>
-                {formatCurrency(customer.loanBalance)}
-              </Text>
-            </View>
-          </View>
-          
-          {hasLoan && (
-            <View style={styles.loanActions}>
-              <TouchableOpacity 
-                style={styles.loanButton}
-                onPress={() => handleLoan(customer, 'pay')}
-              >
-                <CreditCard size={16} color="#16A34A" />
-                <Text style={styles.loanButtonText}>{t('payLoan')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.loanButton, styles.addLoanButton]}
-                onPress={() => handleLoan(customer, 'add')}
-              >
-                <DollarSign size={16} color="#D97706" />
-                <Text style={[styles.loanButtonText, styles.addLoanText]}>{t('addLoan')}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          
-          {!hasLoan && (
-            <TouchableOpacity 
-              style={styles.addLoanOnlyButton}
-              onPress={() => handleLoan(customer, 'add')}
-            >
-              <DollarSign size={16} color="#2563EB" />
-              <Text style={styles.addLoanOnlyText}>{t('addLoan')}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-    );
-  };
 
-  const styles = createStyles(width);
+  const styles = useMemo(() => createStyles(width, c), [width, c]);
 
   return (
     <View style={styles.container}>
@@ -224,10 +259,10 @@ export default function CustomersScreen() {
             onPress={onRefresh}
             disabled={refreshing}
           >
-            <RefreshCw size={20} color="#FFFFFF" />
+            <RefreshCw size={18} color={c.textInverse} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
-            <Plus size={20} color="#FFFFFF" />
+            <Plus size={18} color={c.textInverse} />
           </TouchableOpacity>
         </View>
       </View>
@@ -244,7 +279,7 @@ export default function CustomersScreen() {
           <Text style={styles.statBarLabel}>{t('totalLoans')}</Text>
         </View>
         <View style={styles.statBar}>
-          <Text style={[styles.statBarValue, { color: '#16A34A' }]}>
+          <Text style={[styles.statBarValue, { color: c.success }]}>
             {customers.reduce((total, c) => total + c.loyaltyPoints, 0)}
           </Text>
           <Text style={styles.statBarLabel}>{t('totalPoints')}</Text>
@@ -252,24 +287,52 @@ export default function CustomersScreen() {
       </View>
 
       <View style={styles.searchContainer}>
-        <Search size={20} color="#9CA3AF" />
+        <Search size={18} color={c.textSubtle} />
         <TextInput
           style={styles.searchInput}
           placeholder={t('searchCustomers')}
           value={searchTerm}
           onChangeText={setSearchTerm}
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={c.textSubtle}
         />
       </View>
 
-      <ScrollView style={styles.customersList} showsVerticalScrollIndicator={false}>
+      <View style={styles.typeFilterRow}>
+        {(['customer', 'winga'] as ContactType[]).map(option => {
+          const active = typeFilter === option;
+          return (
+            <TouchableOpacity
+              key={option}
+              style={[styles.typeChip, active && styles.typeChipActive]}
+              onPress={() => setTypeFilter(option)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
+                {(option === 'winga' ? t('winga') : t('walkInCustomer'))} ({countOfType(option)})
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <ScrollView style={[styles.customersList, styles.contentColumn]} showsVerticalScrollIndicator={false}>
         {filteredCustomers.length > 0 ? (
           filteredCustomers.map(customer => (
-            <CustomerCard key={customer.id} customer={customer} />
+            <CustomerCard
+              key={customer.id}
+              customer={customer}
+              styles={styles}
+              c={c}
+              t={t}
+              onEdit={handleEditCustomer}
+              onDelete={handleDeleteCustomer}
+              onLoan={handleLoan}
+            />
           ))
         ) : (
           <View style={styles.emptyState}>
-            <Users size={48} color="#9CA3AF" />
+            <Users size={48} color={c.textSubtle} />
             <Text style={styles.emptyTitle}>{t('noCustomers')}</Text>
             <Text style={styles.emptyDescription}>{t('addFirstCustomer')}</Text>
           </View>
@@ -294,13 +357,35 @@ export default function CustomersScreen() {
 
           <ScrollView style={styles.modalContent}>
             <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>{t('contactType')} *</Text>
+              <View style={styles.typeRow}>
+                {(['customer', 'winga'] as ContactType[]).map(option => {
+                  const active = newCustomer.contactType === option;
+                  return (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.typeChip, active && styles.typeChipActive]}
+                      onPress={() => setNewCustomer({ ...newCustomer, contactType: option })}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
+                        {option === 'winga' ? t('winga') : t('walkInCustomer')}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>{t('customerName')} *</Text>
               <TextInput
                 style={styles.textInput}
                 value={newCustomer.name}
                 onChangeText={(text) => setNewCustomer({...newCustomer, name: text})}
                 placeholder={t('enterCustomerName')}
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={c.textSubtle}
               />
             </View>
 
@@ -311,7 +396,7 @@ export default function CustomersScreen() {
                 value={newCustomer.phone}
                 onChangeText={(text) => setNewCustomer({...newCustomer, phone: text})}
                 placeholder={t('enterPhoneNumber')}
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={c.textSubtle}
                 keyboardType="phone-pad"
               />
             </View>
@@ -323,7 +408,7 @@ export default function CustomersScreen() {
                 value={newCustomer.email}
                 onChangeText={(text) => setNewCustomer({...newCustomer, email: text})}
                 placeholder={t('enterEmail')}
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={c.textSubtle}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
@@ -336,7 +421,7 @@ export default function CustomersScreen() {
                 value={newCustomer.address}
                 onChangeText={(text) => setNewCustomer({...newCustomer, address: text})}
                 placeholder={t('enterAddress')}
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={c.textSubtle}
                 multiline
                 numberOfLines={3}
               />
@@ -378,7 +463,7 @@ export default function CustomersScreen() {
                     onChangeText={(text) => setLoanAmount(roundMoney(Number(text.replace(/[^0-9]/g, ''))))}
                     placeholder="0"
                     keyboardType="numeric"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={c.textSubtle}
                   />
                 </View>}
 
@@ -390,7 +475,7 @@ export default function CustomersScreen() {
                     onChangeText={(text) => setPaymentAmount(roundMoney(Number(text.replace(/[^0-9]/g, ''))))}
                     placeholder="0"
                     keyboardType="numeric"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={c.textSubtle}
                   />
                 </View>}
 
@@ -415,12 +500,20 @@ export default function CustomersScreen() {
   );
 }
 
-const createStyles = (viewportWidth: number) => {
+const createStyles = (viewportWidth: number, c: Palette) => {
   const width = Math.min(Math.max(viewportWidth, 320), 480);
   return StyleSheet.create({
+  // Content column cap. These screens size their interior from a viewport
+  // clamped to 480px, so without a max width a desktop rendered phone-scale
+  // text stretched across the whole monitor.
+  contentColumn: {
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH.wide,
+    alignSelf: 'center',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: 'row',
@@ -428,17 +521,17 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
     padding: width * 0.03,
     paddingTop: width * 0.03,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
   },
   title: {
-    fontSize: width * 0.06,
+    fontSize: fontSize.xxl,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   addButton: {
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
     width: width * 0.1,
     height: width * 0.1,
     borderRadius: width * 0.05,
@@ -450,7 +543,7 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.02,
   },
   refreshButton: {
-    backgroundColor: '#DC2626',
+    backgroundColor: c.danger,
     width: width * 0.1,
     height: width * 0.1,
     borderRadius: width * 0.05,
@@ -462,25 +555,54 @@ const createStyles = (viewportWidth: number) => {
   },
   statsBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     paddingVertical: width * 0.03,
     paddingHorizontal: width * 0.03,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
   },
   statBar: {
     flex: 1,
     alignItems: 'center',
   },
   statBarValue: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   statBarLabel: {
-    fontSize: width * 0.03,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     marginTop: width * 0.005,
+  },
+  typeFilterRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  typeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  typeChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: c.primaryTint,
+  },
+  typeChipActive: {
+    backgroundColor: c.primary,
+  },
+  typeChipText: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+    color: c.primary,
+  },
+  typeChipTextActive: {
+    color: c.textInverse,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -488,23 +610,23 @@ const createStyles = (viewportWidth: number) => {
     margin: width * 0.03,
     paddingHorizontal: width * 0.03,
     paddingVertical: width * 0.025,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.025,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: c.border,
   },
   searchInput: {
     flex: 1,
     marginLeft: width * 0.02,
-    fontSize: width * 0.04,
-    color: '#111827',
+    fontSize: fontSize.md,
+    color: c.text,
   },
   customersList: {
     flex: 1,
     paddingHorizontal: width * 0.03,
   },
   customerCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.03,
     padding: width * 0.03,
     marginBottom: width * 0.025,
@@ -516,7 +638,7 @@ const createStyles = (viewportWidth: number) => {
   },
   customerWithLoan: {
     borderLeftWidth: width * 0.01,
-    borderLeftColor: '#D97706',
+    borderLeftColor: c.warning,
   },
   customerHeader: {
     flexDirection: 'row',
@@ -527,7 +649,7 @@ const createStyles = (viewportWidth: number) => {
     width: width * 0.12,
     height: width * 0.12,
     borderRadius: width * 0.06,
-    backgroundColor: '#EBF4FF',
+    backgroundColor: c.primaryTint,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: width * 0.03,
@@ -536,18 +658,18 @@ const createStyles = (viewportWidth: number) => {
     flex: 1,
   },
   customerName: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.005,
   },
   customerPhone: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   customerEmail: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   customerActions: {
     flexDirection: 'row',
@@ -556,7 +678,7 @@ const createStyles = (viewportWidth: number) => {
   actionButton: {
     padding: width * 0.02,
     borderRadius: width * 0.02,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
   },
   customerDetails: {
     gap: width * 0.025,
@@ -569,17 +691,17 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
   },
   statLabel: {
-    fontSize: width * 0.03,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     marginBottom: width * 0.01,
   },
   statValue: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   loanAmount: {
-    color: '#D97706',
+    color: c.warning,
   },
   loanActions: {
     flexDirection: 'row',
@@ -590,36 +712,36 @@ const createStyles = (viewportWidth: number) => {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#16A34A',
+    backgroundColor: c.success,
     paddingVertical: width * 0.02,
     paddingHorizontal: width * 0.03,
     borderRadius: width * 0.02,
     gap: width * 0.01,
   },
   addLoanButton: {
-    backgroundColor: '#D97706',
+    backgroundColor: c.warning,
   },
   loanButtonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.035,
+    color: c.textInverse,
+    fontSize: fontSize.sm,
     fontWeight: '600',
   },
   addLoanText: {
-    color: '#FFFFFF',
+    color: c.textInverse,
   },
   addLoanOnlyButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EBF4FF',
+    backgroundColor: c.primaryTint,
     paddingVertical: width * 0.02,
     paddingHorizontal: width * 0.03,
     borderRadius: width * 0.02,
     gap: width * 0.01,
   },
   addLoanOnlyText: {
-    color: '#2563EB',
-    fontSize: width * 0.035,
+    color: c.primary,
+    fontSize: fontSize.sm,
     fontWeight: '600',
   },
   emptyState: {
@@ -629,15 +751,15 @@ const createStyles = (viewportWidth: number) => {
     paddingVertical: width * 0.12,
   },
   emptyTitle: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: '600',
-    color: '#6B7280',
+    color: c.textMuted,
     marginTop: width * 0.03,
     marginBottom: width * 0.02,
   },
   emptyDescription: {
-    fontSize: width * 0.035,
-    color: '#9CA3AF',
+    fontSize: fontSize.sm,
+    color: c.textSubtle,
     textAlign: 'center',
   },
   modalContainer: {
@@ -645,7 +767,7 @@ const createStyles = (viewportWidth: number) => {
     maxWidth: 760,
     maxHeight: '92%',
     alignSelf: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: 18,
     overflow: 'hidden',
   },
@@ -663,21 +785,21 @@ const createStyles = (viewportWidth: number) => {
     padding: width * 0.03,
     paddingTop: width * 0.03,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
   },
   modalTitle: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   cancelButton: {
-    fontSize: width * 0.04,
-    color: '#6B7280',
+    fontSize: fontSize.md,
+    color: c.textMuted,
   },
   saveButton: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: '600',
-    color: '#2563EB',
+    color: c.primary,
   },
   modalContent: {
     flex: 1,
@@ -687,57 +809,57 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.03,
   },
   inputLabel: {
-    fontSize: width * 0.035,
+    fontSize: fontSize.sm,
     fontWeight: '600',
-    color: '#374151',
+    color: c.textMuted,
     marginBottom: width * 0.02,
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
     padding: width * 0.03,
-    fontSize: width * 0.04,
-    color: '#111827',
-    backgroundColor: '#FFFFFF',
+    fontSize: fontSize.md,
+    color: c.text,
+    backgroundColor: c.surface,
   },
   customerSummary: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     padding: width * 0.03,
     borderRadius: width * 0.025,
     marginBottom: width * 0.03,
   },
   customerSummaryName: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.01,
   },
   customerSummaryBalance: {
-    fontSize: width * 0.04,
-    color: '#D97706',
+    fontSize: fontSize.md,
+    color: c.warning,
     fontWeight: '600',
   },
   loanCalculation: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     padding: width * 0.03,
     borderRadius: width * 0.025,
     marginTop: width * 0.03,
   },
   calculationTitle: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.02,
   },
   newBalance: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#2563EB',
+    color: c.primary,
     marginTop: width * 0.02,
     paddingTop: width * 0.02,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: c.border,
   },
   });
 };

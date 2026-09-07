@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import { STORAGE_KEYS, storage } from '../utils/storage';
 
 interface Translations {
   [key: string]: string;
@@ -21,6 +22,20 @@ const translations: { [lang: string]: Translations } = {
     addProduct: 'Add Product',
     addCustomer: 'Add Customer',
     viewReports: 'View Reports',
+    refresh: 'Refresh',
+    logout: 'Log Out',
+    months: 'months',
+    warrantyExpires: 'Warranty until',
+    expiredWarranties: 'Expired warranties',
+    expiredWarrantiesHint: 'past warranty — safe to archive',
+    archiveReceipt: 'Archive',
+    restoreReceipt: 'Restore',
+    showArchived: 'Show archived',
+    showActive: 'Show active',
+    contactType: 'Type',
+    winga: 'Winga',
+    walkInCustomer: 'Customer',
+    noWarranty: 'No warranty',
 
     // Products
     products: 'Products',
@@ -150,6 +165,104 @@ const translations: { [lang: string]: Translations } = {
     customerManagement: 'Customer accounts, loyalty and loans', expenseManagement: 'Record and review operating costs',
     shareReceipt: 'Share / PDF',
     allowPopups: 'Allow pop-ups for this site to open the printable receipt',
+
+    // Payment methods. Mobile money is how most Tanzanian counters get paid.
+    paymentMethod: 'Payment Method',
+    cashPayment: 'Cash',
+    mpesa: 'M-Pesa',
+    tigopesa: 'Mixx by Yas',
+    airtelmoney: 'Airtel Money',
+    halopesa: 'HaloPesa',
+    azampesa: 'Azam Pesa',
+    bankTransfer: 'Bank Transfer',
+    splitPayment: 'Split Payment',
+    reference: 'Reference',
+    transactionRef: 'Transaction reference',
+    enterReference: 'Enter mobile money reference',
+
+    // Serialised stock
+    serialNumbers: 'IMEI / Serial Numbers',
+    addImei: 'Add IMEI',
+    imeiList: 'Registered IMEIs',
+    searchByImei: 'Search by IMEI, name or brand',
+    imeiNotFound: 'No item matches that IMEI',
+    imeiAlreadyExists: 'That IMEI is already registered',
+    imeiInvalid: 'An IMEI must be 15 digits',
+    selectUnit: 'Select unit',
+    unitStatus: 'Status',
+    unitInStock: 'In stock',
+    unitSold: 'Sold',
+    unitReturned: 'Returned',
+    unitFaulty: 'Faulty',
+    unitsRequired: 'Register one IMEI for each phone in stock',
+    imeiLookup: 'IMEI Lookup',
+    soldOn: 'Sold on',
+    soldTo: 'Sold to',
+    warranty: 'Warranty',
+    warrantyValid: 'Under warranty',
+    warrantyExpired: 'Warranty expired',
+
+    // Losses and returns
+    recordLoss: 'Record Loss',
+    lossReason: 'Reason',
+    damaged: 'Damaged',
+    stolen: 'Stolen',
+    defective: 'Defective',
+    lostItem: 'Lost',
+    returnSale: 'Return / Refund',
+    processReturn: 'Process Return',
+    returnReason: 'Return reason',
+    refundAmount: 'Refund amount',
+    returnRecorded: 'Return recorded and stock restored',
+
+    // Appearance and system
+    appearance: 'Appearance',
+    lightMode: 'Light',
+    darkMode: 'Dark',
+    systemMode: 'System',
+    settings: 'Settings',
+    language: 'Language',
+    offline: 'Offline',
+    online: 'Online',
+    offlineNotice: 'You are offline. Sales are saved on this device and will sync automatically.',
+    pendingSync: 'waiting to sync',
+    syncNow: 'Sync now',
+    syncing: 'Syncing',
+    synced: 'All changes synced',
+    retry: 'Retry',
+    close: 'Close',
+    all: 'All',
+    clear: 'Clear',
+
+    // Signup / auth errors
+    usernameTaken: 'That username is already taken. Choose another.',
+    usernameChecking: 'Checking availability…',
+    usernameAvailable: 'Username is available',
+    emailRateLimited: 'Too many verification emails have been sent. Please wait about an hour and try again.',
+    emailNotConfirmed: 'Your email is not verified yet. Check your inbox, or resend the verification email below.',
+    invalidCredentials: 'Incorrect email or password. Use the email address you signed up with.',
+    signupSuccess: 'Account created. Check your email to verify your account before signing in.',
+    verificationSent: 'Verification email sent. Check your inbox and spam folder.',
+    passwordTooShort: 'Password must be at least 6 characters',
+    passwordsDoNotMatch: 'Passwords do not match',
+    enterEmailFirst: 'Enter your email address first.',
+    unexpectedError: 'Something went wrong. Please try again.',
+    passwordUpdated: 'Your password has been updated.',
+    resetLinkExpired: 'This reset link has expired or was already used. Request a new one.',
+
+    // Previously missing: these rendered as their raw key on screen
+    // (the category buttons literally read "accessories" and "phones").
+    accessories: 'Accessories',
+    reportsShort: 'Reports',
+    phones: 'Phones',
+    enterIMEI: 'Enter 15-digit IMEI',
+    product: 'Product',
+    quantity: 'Quantity',
+    loss: 'Loss',
+    piecesSold: 'sold',
+    discountSummary: 'Discounts',
+    totalDiscountsGiven: 'Total Discounts Given',
+    averageDiscount: 'Average Discount',
   },
   sw: {
     // Home
@@ -167,6 +280,20 @@ const translations: { [lang: string]: Translations } = {
     addProduct: 'Ongeza Bidhaa',
     addCustomer: 'Ongeza Mteja',
     viewReports: 'Ona Ripoti',
+    refresh: 'Sasisha',
+    logout: 'Ondoka',
+    months: 'miezi',
+    warrantyExpires: 'Dhamana hadi',
+    expiredWarranties: 'Dhamana zilizoisha',
+    expiredWarrantiesHint: 'dhamana imeisha — inaweza kuhifadhiwa',
+    archiveReceipt: 'Hifadhi',
+    restoreReceipt: 'Rudisha',
+    showArchived: 'Onyesha zilizohifadhiwa',
+    showActive: 'Onyesha zinazotumika',
+    contactType: 'Aina',
+    winga: 'Winga',
+    walkInCustomer: 'Mteja',
+    noWarranty: 'Hakuna dhamana',
 
     // Products
     products: 'Bidhaa',
@@ -296,6 +423,103 @@ const translations: { [lang: string]: Translations } = {
     customerManagement: 'Akaunti, uaminifu na mikopo ya wateja', expenseManagement: 'Rekodi na kagua gharama za uendeshaji',
     shareReceipt: 'Shiriki / PDF',
     allowPopups: 'Ruhusu madirisha ibukizi ili kufungua risiti ya kuchapisha',
+
+    // Njia za malipo
+    paymentMethod: 'Njia ya Malipo',
+    cashPayment: 'Taslimu',
+    mpesa: 'M-Pesa',
+    tigopesa: 'Mixx by Yas',
+    airtelmoney: 'Airtel Money',
+    halopesa: 'HaloPesa',
+    azampesa: 'Azam Pesa',
+    bankTransfer: 'Benki',
+    splitPayment: 'Malipo Mchanganyiko',
+    reference: 'Kumbukumbu',
+    transactionRef: 'Namba ya muamala',
+    enterReference: 'Weka namba ya muamala',
+
+    // Namba za IMEI
+    serialNumbers: 'Namba za IMEI',
+    addImei: 'Ongeza IMEI',
+    imeiList: 'IMEI Zilizosajiliwa',
+    searchByImei: 'Tafuta kwa IMEI, jina au chapa',
+    imeiNotFound: 'Hakuna bidhaa yenye IMEI hiyo',
+    imeiAlreadyExists: 'IMEI hiyo tayari imesajiliwa',
+    imeiInvalid: 'IMEI lazima iwe na tarakimu 15',
+    selectUnit: 'Chagua kifaa',
+    unitStatus: 'Hali',
+    unitInStock: 'Ipo stoo',
+    unitSold: 'Imeuzwa',
+    unitReturned: 'Imerudishwa',
+    unitFaulty: 'Ina hitilafu',
+    unitsRequired: 'Sajili IMEI moja kwa kila simu iliyopo stoo',
+    imeiLookup: 'Tafuta IMEI',
+    soldOn: 'Iliuzwa tarehe',
+    soldTo: 'Iliuzwa kwa',
+    warranty: 'Dhamana',
+    warrantyValid: 'Ina dhamana',
+    warrantyExpired: 'Dhamana imeisha',
+
+    // Hasara na marejesho
+    recordLoss: 'Andika Hasara',
+    lossReason: 'Sababu',
+    damaged: 'Imeharibika',
+    stolen: 'Imeibiwa',
+    defective: 'Ina kasoro',
+    lostItem: 'Imepotea',
+    returnSale: 'Rejesha / Rudisha Fedha',
+    processReturn: 'Fanya Marejesho',
+    returnReason: 'Sababu ya kurejesha',
+    refundAmount: 'Kiasi cha kurudisha',
+    returnRecorded: 'Marejesho yamehifadhiwa na stoo imerekebishwa',
+
+    // Mwonekano na mfumo
+    appearance: 'Mwonekano',
+    lightMode: 'Mwanga',
+    darkMode: 'Giza',
+    systemMode: 'Mfumo',
+    settings: 'Mipangilio',
+    language: 'Lugha',
+    offline: 'Hakuna Mtandao',
+    online: 'Mtandaoni',
+    offlineNotice: 'Hauna mtandao. Mauzo yanahifadhiwa kwenye kifaa na yatatumwa yenyewe.',
+    pendingSync: 'yanasubiri kutumwa',
+    syncNow: 'Tuma sasa',
+    syncing: 'Inatuma',
+    synced: 'Kila kitu kimetumwa',
+    retry: 'Jaribu tena',
+    close: 'Funga',
+    all: 'Zote',
+    clear: 'Futa',
+
+    // Makosa ya kujisajili
+    usernameTaken: 'Jina hilo la mtumiaji limeshatumika. Chagua lingine.',
+    usernameChecking: 'Inaangalia upatikanaji…',
+    usernameAvailable: 'Jina la mtumiaji linapatikana',
+    emailRateLimited: 'Barua pepe nyingi za uthibitisho zimetumwa. Subiri takribani saa moja kisha ujaribu tena.',
+    emailNotConfirmed: 'Barua pepe yako haijathibitishwa. Angalia kikasha chako, au tuma tena barua ya uthibitisho hapa chini.',
+    invalidCredentials: 'Barua pepe au nenosiri si sahihi. Tumia barua pepe uliyojisajili nayo.',
+    signupSuccess: 'Akaunti imetengenezwa. Angalia barua pepe yako kuthibitisha kabla ya kuingia.',
+    verificationSent: 'Barua ya uthibitisho imetumwa. Angalia kikasha chako na folda ya taka.',
+    passwordTooShort: 'Nenosiri lazima liwe na herufi 6 au zaidi',
+    passwordsDoNotMatch: 'Manenosiri hayafanani',
+    enterEmailFirst: 'Weka barua pepe yako kwanza.',
+    unexpectedError: 'Kuna hitilafu imetokea. Tafadhali jaribu tena.',
+    passwordUpdated: 'Nenosiri lako limebadilishwa.',
+    resetLinkExpired: 'Kiungo hiki cha kubadili nenosiri kimeisha muda au kimeshatumika. Omba kingine.',
+
+    // Zilizokuwa hazipo: zilionekana kama majina ya funguo skrini.
+    accessories: 'Vifaa',
+    reportsShort: 'Ripoti',
+    phones: 'Simu',
+    enterIMEI: 'Weka IMEI ya tarakimu 15',
+    product: 'Bidhaa',
+    quantity: 'Idadi',
+    loss: 'Hasara',
+    piecesSold: 'zimeuzwa',
+    discountSummary: 'Punguzo',
+    totalDiscountsGiven: 'Jumla ya Punguzo',
+    averageDiscount: 'Wastani wa Punguzo',
   },
 };
 
@@ -310,23 +534,39 @@ interface LanguageContextType {
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguage] = useState<'en' | 'sw'>('en');
+  // Swahili is the working language of most Tanzanian phone counters, so it is
+  // the default rather than an opt-in.
+  const [language, setLanguageState] = useState<'en' | 'sw'>('sw');
 
-  const t = (key: string): string => {
-    return translations[language][key] || key;
+  useEffect(() => {
+    let active = true;
+    storage.get(STORAGE_KEYS.language).then(saved => {
+      if (active && (saved === 'en' || saved === 'sw')) setLanguageState(saved);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const setLanguage = (next: 'en' | 'sw') => {
+    setLanguageState(next);
+    void storage.set(STORAGE_KEYS.language, next);
   };
 
-  const toggleLanguage = () => {
-    setLanguage(prev => prev === 'en' ? 'sw' : 'en');
-  };
+  const value = useMemo(() => {
+    // Fall back to English before the raw key so a missing Swahili string shows
+    // real words instead of `lowStockAlert` on the shop floor.
+    const t = (key: string): string =>
+      translations[language][key] || translations.en[key] || key;
 
-  const value = {
-    language,
-    setLanguage,
-    t,
-    toggleLanguage,
-    isSwahili: language === 'sw',
-  };
+    return {
+      language,
+      setLanguage,
+      t,
+      toggleLanguage: () => setLanguage(language === 'sw' ? 'en' : 'sw'),
+      isSwahili: language === 'sw',
+    };
+  }, [language]);
 
   return (
     <LanguageContext.Provider value={value}>

@@ -1,30 +1,118 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, useWindowDimensions, Platform } from 'react-native';
-import { Receipt, Download, RefreshCw, Share2 } from 'lucide-react-native';
+import { Receipt, Download, RefreshCw, RotateCcw, Share2, ShieldAlert, Archive } from 'lucide-react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { formatCurrency } from '../../utils/currency';
-import { useSales, Sale } from '../../hooks/useSales';
+import { useSales, Sale, SaleItem, PaymentMethod, warrantyState } from '../../hooks/useSales';
+import { useReturns } from '../../hooks/useReturns';
 import { supabase } from '../../utils/supabase';
+import { CONTENT_MAX_WIDTH } from '../../constants/layout';
+import { Palette, fontSize, fontWeight, radius, spacing } from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { useFocusEffect } from 'expo-router';
 
+const PAYMENT_LABEL: Record<PaymentMethod, string> = {
+  cash: 'cashPayment',
+  mpesa: 'mpesa',
+  tigopesa: 'tigopesa',
+  airtelmoney: 'airtelmoney',
+  halopesa: 'halopesa',
+  azampesa: 'azampesa',
+  bank: 'bankTransfer',
+  credit: 'loan',
+  split: 'splitPayment',
+};
+
+/**
+ * The IMEIs handed over on a sale line. Mirrors the till's own resolver: the
+ * units bound to this sale item, falling back to the pre-v3 single column so
+ * old receipts still reprint with the number that left the shop.
+ */
+function soldImeis(item: SaleItem): string[] {
+  if (item.unitImeis?.length) return item.unitImeis;
+  return item.productImei ? [item.productImei] : [];
+}
+
+
+/**
+ * The warranty line for a receipt row.
+ *
+ * A line with no expiry is not "expired" — accessories and everything sold
+ * before v5 simply carry no cover, and saying otherwise on a printed receipt
+ * would invent a promise the shop never made.
+ */
+function warrantyLabel(
+  item: SaleItem,
+  t: (key: string) => string,
+): string | null {
+  if (!item.warrantyUntil) return null;
+  const until = new Date(`${item.warrantyUntil}T23:59:59`);
+  if (Number.isNaN(until.getTime())) return null;
+  const term = item.warrantyMonths ? ` (${item.warrantyMonths} ${t('months')})` : '';
+  return warrantyState(item.warrantyUntil) === 'expired'
+    ? `${t('warrantyExpired')}: ${until.toLocaleDateString()}`
+    : `${t('warrantyExpires')} ${until.toLocaleDateString()}${term}`;
+}
+
+/**
+ * This template interpolates shop-entered text straight into HTML, so a product
+ * name containing `<` would otherwise break the printed receipt.
+ */
+const escapeHtml = (value?: string) => (value || '').replace(/[&<>"']/g, character => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+})[character] || character);
+
 export default function ReceiptsScreen() {
   const { t } = useLanguage();
-  const { sales, fetchSales, updateSale } = useSales();
+  const { colors: c } = useTheme();
+  const { sales, fetchSales, updateSale, setSaleArchived } = useSales();
+  const { processReturn } = useReturns();
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
   const [selectedReceipt, setSelectedReceipt] = useState<Sale | null>(null);
+
+  /**
+   * Faulty stock goes back as faulty, not as sellable — the distinction that
+   * keeps a broken handset off the shelf.
+   */
+  const startReturn = (item: SaleItem) => {
+    const confirm = async (restock: boolean) => {
+      const { id, error } = await processReturn({
+        saleItemId: item.id,
+        quantity: item.quantity,
+        reason: restock ? 'customer_return' : 'faulty',
+        restock,
+      });
+
+      if (!id) {
+        Alert.alert(t('error'), error ?? t('error'));
+        return;
+      }
+      Alert.alert(t('success'), t('returnRecorded'));
+      await fetchSales();
+      setSelectedReceipt(null);
+    };
+
+    Alert.alert(t('returnSale'), `${item.productName ?? ''} · ${item.quantity} ×`, [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('unitInStock'), onPress: () => confirm(true) },
+      { text: t('unitFaulty'), style: 'destructive', onPress: () => confirm(false) },
+    ]);
+  };
   const [pressedReceiptId, setPressedReceiptId] = useState<string | null>(null);
+  /** Archived receipts are filed away, not gone. Off by default, one tap back. */
+  const [showArchived, setShowArchived] = useState(false);
   const [receiptSignature, setReceiptSignature] = useState('');
   const [receiptDescription, setReceiptDescription] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [userProfile, setUserProfile] = useState<{username: string, shop_name: string} | null>(null);
   const { width } = useWindowDimensions();
-  const styles = createStyles(width);
+  const styles = useMemo(() => createStyles(width, c), [width, c]);
 
   useEffect(() => { fetchUserProfile(); }, []);
   useFocusEffect(useCallback(() => {
@@ -37,7 +125,10 @@ export default function ReceiptsScreen() {
     setRefreshing(false);
   }, [fetchSales]);
 
+  const archivedCount = sales.filter(receipt => receipt.archivedAt).length;
+
   const filteredReceipts = sales.filter(receipt => {
+    if (Boolean(receipt.archivedAt) !== showArchived) return false;
     if (!searchTerm) return true;
 
     const receiptId = receipt.id.toLowerCase().includes(searchTerm.toLowerCase());
@@ -83,9 +174,16 @@ export default function ReceiptsScreen() {
     const itemsHTML = sale.items.map(item => {
       const itemPrice = item.price || 0;
       const itemTotal = item.quantity * itemPrice;
+      const imeiHTML = soldImeis(item)
+        .map(value => `<div style="font-size: 11px; color: #666; margin-top: 3px;">IMEI: ${escapeHtml(value)}</div>`)
+        .join('');
+      const warranty = warrantyLabel(item, t);
+      const warrantyHTML = warranty
+        ? `<div style="font-size: 11px; color: #666; margin-top: 3px;">${escapeHtml(warranty)}</div>`
+        : '';
       return `
         <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.productName || 'Product'}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">${escapeHtml(item.productName || 'Product')}${imeiHTML}${warrantyHTML}</td>
           <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
           <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">TSh ${itemPrice.toLocaleString()}</td>
           <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">TSh ${itemTotal.toLocaleString()}</td>
@@ -95,7 +193,7 @@ export default function ReceiptsScreen() {
 
     const signatureHTML = sale.signature ? `
       <div style="margin: 20px 0;">
-        <h3 style="margin: 0 0 10px 0; color: #2563eb;">${t('signature')}</h3>
+        <h3 style="margin: 0 0 10px 0; color: #5F33E1;">${t('signature')}</h3>
         <div style="border: 1px solid #ddd; padding: 10px; border-radius: 4px; font-style: italic;">
           ${sale.signature}
         </div>
@@ -104,7 +202,7 @@ export default function ReceiptsScreen() {
 
     const descriptionHTML = sale.description ? `
       <div style="margin: 20px 0;">
-        <h3 style="margin: 0 0 10px 0; color: #2563eb;">${t('notes')}</h3>
+        <h3 style="margin: 0 0 10px 0; color: #5F33E1;">${t('notes')}</h3>
         <div style="border: 1px solid #ddd; padding: 10px; border-radius: 4px; white-space: pre-wrap;">
           ${sale.description}
         </div>
@@ -135,7 +233,7 @@ export default function ReceiptsScreen() {
             }
             .header h1 {
               margin: 0;
-              color: #2563eb;
+              color: #5F33E1;
               font-size: 24px;
             }
             .header p {
@@ -197,10 +295,10 @@ export default function ReceiptsScreen() {
           </div>
 
           <div class="content">
-            ${sale.customer_name ? `<div style="margin-bottom: 20px; padding: 10px; background-color: #f0f9ff; border-radius: 8px; border-left: 4px solid #2563eb;">
-              <strong style="color: #2563eb;">${t('customerName')}:</strong> ${sale.customer_name}
+            ${sale.customer_name ? `<div style="margin-bottom: 20px; padding: 10px; background-color: #F1ECFE; border-radius: 8px; border-left: 4px solid #5F33E1;">
+              <strong style="color: #5F33E1;">${t('customerName')}:</strong> ${sale.customer_name}
             </div>` : ''}
-            <h2 style="margin-top: 0; color: #2563eb;">${t('itemsPurchased')}</h2>
+            <h2 style="margin-top: 0; color: #5F33E1;">${t('itemsPurchased')}</h2>
             <table>
               <thead>
                 <tr>
@@ -291,9 +389,27 @@ export default function ReceiptsScreen() {
     }
   };
 
-  const ReceiptList = () => {
+  // Rendered as an element rather than a nested component: declaring a
+  // component inside the render body gives React a new type on every
+  // render, which unmounts and remounts the whole subtree.
+  const receiptList = (() => {
     return (
       <View style={styles.receiptsContainer}>
+        {archivedCount > 0 ? (
+          <TouchableOpacity
+            style={styles.archiveToggle}
+            onPress={() => setShowArchived(previous => !previous)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: showArchived }}
+            accessibilityLabel={t('showArchived')}
+          >
+            <Archive size={15} color={c.primary} />
+            <Text style={styles.archiveToggleText}>
+              {showArchived ? t('showActive') : `${t('showArchived')} (${archivedCount})`}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
         {filteredReceipts.map((receipt) => (
           <TouchableOpacity
             key={receipt.id}
@@ -311,13 +427,21 @@ export default function ReceiptsScreen() {
           >
             <View style={styles.receiptHeader}>
               <View style={styles.receiptIdContainer}>
-                <Receipt size={20} color="#2563EB" />
+                <Receipt size={18} color={c.primary} />
                 <Text style={styles.receiptId}>#{receipt.id.slice(-8).toUpperCase()}</Text>
               </View>
               <Text style={styles.receiptDate}>
                 {new Date(receipt.created_at).toLocaleDateString()}
               </Text>
             </View>
+
+            {/* The shop's obligation on this sale has ended. The record stays. */}
+            {receipt.items.some(item => warrantyState(item.warrantyUntil) === 'expired') ? (
+              <View style={styles.expiredWarrantyPill}>
+                <ShieldAlert size={13} color={c.warning} />
+                <Text style={styles.expiredWarrantyText}>{t('warrantyExpired')}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.receiptDetails}>
               <Text style={styles.receiptTotal}>{formatCurrency(receipt.total)}</Text>
@@ -333,23 +457,39 @@ export default function ReceiptsScreen() {
               <Text style={styles.receiptTimeText}>
                 {new Date(receipt.created_at).toLocaleTimeString()}
               </Text>
-              <TouchableOpacity
-                style={styles.cardShareButton}
-                onPress={(event) => {
-                  event.stopPropagation();
-                  downloadReceiptAsPDF(receipt);
-                }}
-              >
-                <Share2 size={16} color="#FFFFFF" />
-                <Text style={styles.cardShareText}>{t('shareReceipt')}</Text>
-              </TouchableOpacity>
+              <View style={styles.cardActions}>
+                <TouchableOpacity
+                  style={styles.cardArchiveButton}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setSaleArchived(receipt.id, !receipt.archivedAt);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={receipt.archivedAt ? t('restoreReceipt') : t('archiveReceipt')}
+                >
+                  <Archive size={15} color={c.primary} />
+                  <Text style={styles.cardArchiveText}>
+                    {receipt.archivedAt ? t('restoreReceipt') : t('archiveReceipt')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.cardShareButton}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    downloadReceiptAsPDF(receipt);
+                  }}
+                >
+                  <Share2 size={16} color={c.textInverse} />
+                  <Text style={styles.cardShareText}>{t('shareReceipt')}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </TouchableOpacity>
         ))}
 
         {filteredReceipts.length === 0 && (
           <View style={styles.emptyState}>
-            <Receipt size={48} color="#9CA3AF" />
+            <Receipt size={48} color={c.textSubtle} />
             <Text style={styles.emptyStateText}>{t('noReceipts')}</Text>
             <Text style={styles.emptyStateSubtext}>
               {searchTerm ? t('adjustSearch') : t('receiptsAfterSales')}
@@ -358,7 +498,8 @@ export default function ReceiptsScreen() {
         )}
       </View>
     );
-  };
+  })();
+
 
   return (
     <View style={styles.container}>
@@ -373,7 +514,7 @@ export default function ReceiptsScreen() {
             onPress={onRefresh}
             disabled={refreshing}
           >
-            <RefreshCw size={20} color="#FFFFFF" />
+            <RefreshCw size={18} color={c.textInverse} />
           </TouchableOpacity>
         </View>
       </View>
@@ -383,17 +524,17 @@ export default function ReceiptsScreen() {
         placeholder={t('searchReceipts')}
         value={searchTerm}
         onChangeText={setSearchTerm}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={c.textSubtle}
       />
 
       <ScrollView
-        style={styles.receiptsList}
+        style={[styles.receiptsList, styles.contentColumn]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <ReceiptList />
+        {receiptList}
       </ScrollView>
 
       {/* Receipt Detail Modal */}
@@ -410,7 +551,7 @@ export default function ReceiptsScreen() {
                 style={styles.downloadButton}
                 onPress={() => downloadReceiptAsPDF()}
               >
-                <Download size={16} color="#FFFFFF" />
+                <Download size={16} color={c.textInverse} />
                 <Text style={styles.downloadButtonText}>PDF</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={async () => {
@@ -454,9 +595,19 @@ export default function ReceiptsScreen() {
                   {selectedReceipt.items.map((item, index) => {
                     return (
                       <View key={index} style={styles.receiptItem}>
-                        <Text style={styles.receiptItemName}>
-                          {item.productName || 'Product'}
-                        </Text>
+                        <View style={styles.receiptItemMain}>
+                          <Text style={styles.receiptItemName}>
+                            {item.productName || 'Product'}
+                          </Text>
+                          {soldImeis(item).map(imei => (
+                            <Text key={imei} style={styles.receiptItemImei} selectable>
+                              IMEI: {imei}
+                            </Text>
+                          ))}
+                          {warrantyLabel(item, t) ? (
+                            <Text style={styles.receiptItemImei}>{warrantyLabel(item, t)}</Text>
+                          ) : null}
+                        </View>
                         <Text style={styles.receiptItemDetails}>
                           {item.quantity} x {formatCurrency(item.price)} = {formatCurrency(item.quantity * item.price)}
                         </Text>
@@ -465,10 +616,42 @@ export default function ReceiptsScreen() {
                   })}
                 </View>
 
+                {/* Returns: phones come back under warranty or faulty, and the
+                    app previously had no way to reverse a sale at all. */}
+                <View style={styles.returnSection}>
+                  <Text style={styles.sectionTitle}>{t('returnSale')}</Text>
+                  {selectedReceipt.status !== 'completed' ? (
+                    <Text style={styles.returnedNotice}>
+                      {selectedReceipt.status === 'returned' ? t('unitReturned') : t('processReturn')}
+                    </Text>
+                  ) : null}
+                  {selectedReceipt.items.map(item => (
+                    <TouchableOpacity
+                      key={`return-${item.id}`}
+                      style={styles.returnRow}
+                      onPress={() => startReturn(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t('returnSale')}: ${item.productName ?? ''}`}
+                    >
+                      <RotateCcw size={16} color={c.warning} />
+                      <Text style={styles.returnRowText} numberOfLines={1}>
+                        {item.productName ?? '—'} · {item.quantity} ×
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
                 <View style={styles.receiptSummary}>
                   <View style={styles.receiptSummaryTotal}>
                     <Text style={styles.receiptTotalLabel}>{t('total')}:</Text>
                     <Text style={styles.receiptTotalAmount}>{formatCurrency(selectedReceipt.total)}</Text>
+                  </View>
+                  <View style={styles.receiptPayment}>
+                    <Text style={styles.receiptPaymentLabel}>{t('paymentMethod')}:</Text>
+                    <Text style={styles.receiptPaymentAmount}>
+                      {t(PAYMENT_LABEL[selectedReceipt.paymentMethod] ?? 'cashPayment')}
+                      {selectedReceipt.paymentReference ? ` · ${selectedReceipt.paymentReference}` : ''}
+                    </Text>
                   </View>
                   <View style={styles.receiptPayment}>
                     <Text style={styles.receiptPaymentLabel}>{t('cashReceived')}:</Text>
@@ -487,7 +670,7 @@ export default function ReceiptsScreen() {
                     value={customerName}
                     onChangeText={setCustomerName}
                     placeholder={t('enterCustomerReceipt')}
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={c.textSubtle}
                   />
                 </View>
 
@@ -498,7 +681,7 @@ export default function ReceiptsScreen() {
                     value={receiptSignature}
                     onChangeText={setReceiptSignature}
                     placeholder={t('enterSignature')}
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={c.textSubtle}
                   />
                 </View>
 
@@ -511,7 +694,7 @@ export default function ReceiptsScreen() {
                     placeholder={t('enterNotes')}
                     multiline
                     numberOfLines={3}
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={c.textSubtle}
                   />
                 </View>
 
@@ -529,19 +712,55 @@ export default function ReceiptsScreen() {
   );
 }
 
-const createStyles = (viewportWidth: number) => {
+const createStyles = (viewportWidth: number, c: Palette) => {
   const width = Math.min(Math.max(viewportWidth, 320), 480);
   return StyleSheet.create({
+  returnSection: {
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: c.warningTint,
+    gap: 8,
+  },
+  returnedNotice: {
+    color: c.warning,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  returnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: c.surface,
+    minHeight: 44,
+  },
+  returnRowText: {
+    flex: 1,
+    color: c.text,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  // Content column cap. These screens size their interior from a viewport
+  // clamped to 480px, so without a max width a desktop rendered phone-scale
+  // text stretched across the whole monitor.
+  contentColumn: {
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH.wide,
+    alignSelf: 'center',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: c.background,
   },
   header: {
     padding: width * 0.03,
     paddingTop: width * 0.03,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
   },
   headerContent: {
     flexDirection: 'row',
@@ -549,25 +768,25 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
   },
   title: {
-    fontSize: width * 0.06,
+    fontSize: fontSize.xxl,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   headerSubtitle: {
     marginTop: 2,
-    fontSize: width * 0.03,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptCustomerName: {
     marginTop: width * 0.015,
-    fontSize: width * 0.032,
-    color: '#374151',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     fontWeight: '500',
   },
   refreshButton: {
     padding: width * 0.02,
     borderRadius: width * 0.02,
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
   },
   refreshingButton: {
     opacity: 0.6,
@@ -576,12 +795,12 @@ const createStyles = (viewportWidth: number) => {
     margin: width * 0.03,
     paddingHorizontal: width * 0.03,
     paddingVertical: width * 0.025,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.025,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    fontSize: width * 0.04,
-    color: '#111827',
+    borderColor: c.border,
+    fontSize: fontSize.md,
+    color: c.text,
   },
   receiptsList: {
     flex: 1,
@@ -590,8 +809,59 @@ const createStyles = (viewportWidth: number) => {
   receiptsContainer: {
     paddingBottom: width * 0.05,
   },
+  archiveToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: c.primaryTint,
+  },
+  archiveToggleText: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+    color: c.primary,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  cardArchiveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: c.primaryTint,
+  },
+  cardArchiveText: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    color: c.primary,
+  },
+  expiredWarrantyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: c.warningTint,
+  },
+  expiredWarrantyText: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    color: c.warning,
+  },
   receiptCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.03,
     padding: width * 0.04,
     marginBottom: width * 0.03,
@@ -602,7 +872,7 @@ const createStyles = (viewportWidth: number) => {
     elevation: 3,
   },
   pressedReceiptCard: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     transform: [{ scale: 0.98 }],
   },
   receiptHeader: {
@@ -617,13 +887,13 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.02,
   },
   receiptId: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#2563EB',
+    color: c.primary,
   },
   receiptDate: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptDetails: {
     flexDirection: 'row',
@@ -632,13 +902,13 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.02,
   },
   receiptTotal: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#16A34A',
+    color: c.success,
   },
   receiptItemsCount: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptTime: {
     flexDirection: 'row',
@@ -646,22 +916,22 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
   },
   receiptTimeText: {
-    fontSize: width * 0.03,
-    color: '#9CA3AF',
+    fontSize: fontSize.sm,
+    color: c.textSubtle,
   },
   cardShareButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
     borderRadius: 8,
     paddingHorizontal: 11,
     paddingVertical: 8,
   },
   cardShareText: {
-    color: '#FFFFFF',
+    color: c.textInverse,
     fontWeight: '700',
-    fontSize: width * 0.03,
+    fontSize: fontSize.sm,
   },
   emptyState: {
     alignItems: 'center',
@@ -669,15 +939,15 @@ const createStyles = (viewportWidth: number) => {
     padding: width * 0.1,
   },
   emptyStateText: {
-    fontSize: width * 0.05,
+    fontSize: fontSize.xl,
     fontWeight: 'bold',
-    color: '#6B7280',
+    color: c.textMuted,
     marginTop: width * 0.05,
     marginBottom: width * 0.02,
   },
   emptyStateSubtext: {
-    fontSize: width * 0.04,
-    color: '#9CA3AF',
+    fontSize: fontSize.md,
+    color: c.textSubtle,
     textAlign: 'center',
   },
   modalContainer: {
@@ -685,7 +955,7 @@ const createStyles = (viewportWidth: number) => {
     maxWidth: 760,
     maxHeight: '92%',
     alignSelf: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: 18,
     overflow: 'hidden',
   },
@@ -703,36 +973,36 @@ const createStyles = (viewportWidth: number) => {
     padding: width * 0.03,
     paddingTop: width * 0.12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
   },
   modalTitle: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   cancelButton: {
-    fontSize: width * 0.04,
-    color: '#6B7280',
+    fontSize: fontSize.md,
+    color: c.textMuted,
   },
   saveButton: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: '600',
-    color: '#2563EB',
+    color: c.primary,
   },
   modalContent: {
     flex: 1,
     padding: width * 0.03,
   },
   sectionTitle: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.03,
   },
   receiptTitle: {
-    fontSize: width * 0.06,
+    fontSize: fontSize.xxl,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.02,
   },
   receiptItems: {
@@ -744,22 +1014,29 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
     paddingVertical: width * 0.02,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: c.surfaceSunken,
   },
-  receiptItemName: {
-    fontSize: width * 0.04,
-    fontWeight: '600',
-    color: '#111827',
+  receiptItemMain: {
     flex: 1,
   },
+  receiptItemName: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: c.text,
+  },
+  receiptItemImei: {
+    fontSize: fontSize.xs,
+    color: c.textMuted,
+    marginTop: 2,
+  },
   receiptItemDetails: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptSummary: {
     marginBottom: width * 0.05,
     padding: width * 0.04,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     borderRadius: width * 0.03,
   },
   receiptSummaryTotal: {
@@ -769,14 +1046,14 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.02,
   },
   receiptTotalLabel: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   receiptTotalAmount: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#16A34A',
+    color: c.success,
   },
   receiptPayment: {
     flexDirection: 'row',
@@ -785,12 +1062,12 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.02,
   },
   receiptPaymentLabel: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptPaymentAmount: {
-    fontSize: width * 0.035,
-    color: '#111827',
+    fontSize: fontSize.sm,
+    color: c.text,
   },
   receiptChange: {
     flexDirection: 'row',
@@ -798,60 +1075,60 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
   },
   receiptChangeLabel: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   receiptChangeAmount: {
-    fontSize: width * 0.035,
-    color: '#111827',
+    fontSize: fontSize.sm,
+    color: c.text,
   },
   receiptCustomerSection: {
     marginBottom: width * 0.05,
   },
   customerInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
     padding: width * 0.03,
-    fontSize: width * 0.04,
-    color: '#111827',
-    backgroundColor: '#FFFFFF',
+    fontSize: fontSize.md,
+    color: c.text,
+    backgroundColor: c.surface,
   },
   receiptSignatureSection: {
     marginBottom: width * 0.05,
   },
   signatureInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
     padding: width * 0.03,
-    fontSize: width * 0.04,
-    color: '#111827',
-    backgroundColor: '#FFFFFF',
+    fontSize: fontSize.md,
+    color: c.text,
+    backgroundColor: c.surface,
   },
   receiptDescriptionSection: {
     marginBottom: width * 0.05,
   },
   descriptionInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
     padding: width * 0.03,
-    fontSize: width * 0.04,
-    color: '#111827',
-    backgroundColor: '#FFFFFF',
+    fontSize: fontSize.md,
+    color: c.text,
+    backgroundColor: c.surface,
     minHeight: width * 0.2,
     textAlignVertical: 'top',
   },
   receiptFooter: {
     alignItems: 'center',
     padding: width * 0.04,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: c.surfaceSunken,
     borderRadius: width * 0.03,
   },
   receiptFooterText: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     textAlign: 'center',
     marginBottom: width * 0.01,
   },
@@ -861,7 +1138,7 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.02,
   },
   downloadButton: {
-    backgroundColor: '#16A34A',
+    backgroundColor: c.success,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: width * 0.03,
@@ -870,8 +1147,8 @@ const createStyles = (viewportWidth: number) => {
     gap: width * 0.01,
   },
   downloadButtonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.035,
+    color: c.textInverse,
+    fontSize: fontSize.sm,
     fontWeight: '600',
   },
   });

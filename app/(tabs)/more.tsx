@@ -1,33 +1,76 @@
 import { useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import { ChevronRight, Receipt, Users, WalletCards } from 'lucide-react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ChevronRight, PackageX, Receipt, ScanLine, Settings, Users, WalletCards } from 'lucide-react-native';
+import { Screen, ScreenHeader } from '../../components/Screen';
+import { Accent, Card, IconChip } from '../../components/ui';
+import { Palette, fontSize, fontWeight, spacing } from '../../constants/theme';
 import { useLanguage } from '../../hooks/LanguageContext';
+import { useResponsive } from '../../hooks/useResponsive';
+import { useTheme } from '../../hooks/useTheme';
+import { useMemo } from 'react';
 
+/**
+ * The tools that do not earn a slot on the tab bar.
+ *
+ * Previously this screen hardcoded every colour, its own 800px breakpoint and
+ * its own type scale, so it stayed light-grey when the rest of the app went
+ * dark. It now resolves everything from the shared tokens like every other
+ * screen.
+ */
 export default function MoreScreen() {
   const router = useRouter();
   const { t } = useLanguage();
-  const { width } = useWindowDimensions();
-  const desktop = width >= 800;
-  const tools = [
-    { route: '/(tabs)/receipts', title: t('receipts'), description: t('receiptsHistory'), icon: Receipt, color: '#2563EB', background: '#DBEAFE' },
-    { route: '/(tabs)/customers', title: t('customers'), description: t('customerManagement'), icon: Users, color: '#16A34A', background: '#DCFCE7' },
-    { route: '/(tabs)/expenses', title: t('expenses'), description: t('expenseManagement'), icon: WalletCards, color: '#DC2626', background: '#FEE2E2' },
-  ] as const;
+  const { colors: c } = useTheme();
+  const { isPhone } = useResponsive();
+  const styles = useMemo(() => createStyles(c), [c]);
 
-  return <View style={styles.container}>
-    <View style={styles.header}><Text style={styles.title}>{t('more')}</Text><Text style={styles.subtitle}>{t('businessTools')}</Text></View>
-    <ScrollView contentContainerStyle={[styles.grid, desktop && styles.desktopGrid]}>
-      {tools.map(({ route, title, description, icon: Icon, color, background }) => (
-        <TouchableOpacity key={route} style={[styles.card, desktop && styles.desktopCard]} onPress={() => router.push(route)} activeOpacity={0.75}>
-          <View style={[styles.icon, { backgroundColor: background }]}><Icon color={color} size={26}/></View>
-          <View style={styles.copy}><Text style={styles.cardTitle}>{title}</Text><Text style={styles.description}>{description}</Text></View>
-          <ChevronRight color="#94A3B8" size={22}/>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
-  </View>;
+  const tools: { route: string; title: string; description: string; icon: typeof ScanLine; accent: Accent }[] = [
+    { route: '/(tabs)/imei', title: t('imeiLookup'), description: t('searchByImei'), icon: ScanLine, accent: 'violet' },
+    { route: '/(tabs)/receipts', title: t('receipts'), description: t('receiptsHistory'), icon: Receipt, accent: 'blue' },
+    { route: '/(tabs)/customers', title: t('customers'), description: t('customerManagement'), icon: Users, accent: 'green' },
+    { route: '/(tabs)/expenses', title: t('expenses'), description: t('expenseManagement'), icon: WalletCards, accent: 'pink' },
+    { route: '/(tabs)/losses', title: t('recordLoss'), description: t('lossInformation'), icon: PackageX, accent: 'orange' },
+    { route: '/(tabs)/settings', title: t('settings'), description: t('appearance'), icon: Settings, accent: 'yellow' },
+  ];
+
+  return (
+    <Screen>
+      <ScreenHeader title={t('more')} subtitle={t('businessTools')} />
+      <View style={styles.grid}>
+        {tools.map(({ route, title, description, icon: Icon, accent }) => (
+          <Pressable
+            key={route}
+            onPress={() => router.push(route as never)}
+            accessibilityRole="link"
+            accessibilityLabel={title}
+            accessibilityHint={description}
+            style={({ pressed }) => [
+              styles.cell,
+              { flexBasis: isPhone ? '100%' : '47%', opacity: pressed ? 0.8 : 1 },
+            ]}
+          >
+            <Card style={styles.card}>
+              <IconChip accent={accent} size={52}>
+                <Icon color={c.accent[accent]} size={22} />
+              </IconChip>
+              <View style={styles.copy}>
+                <Text style={styles.cardTitle}>{title}</Text>
+                <Text style={styles.description}>{description}</Text>
+              </View>
+              <ChevronRight color={c.textSubtle} size={18} />
+            </Card>
+          </Pressable>
+        ))}
+      </View>
+    </Screen>
+  );
 }
 
-const styles = StyleSheet.create({
-  container:{flex:1,backgroundColor:'#F4F7FB'},header:{backgroundColor:'#fff',padding:22,borderBottomWidth:1,borderBottomColor:'#E2E8F0'},title:{fontSize:27,fontWeight:'700',color:'#172033'},subtitle:{marginTop:5,color:'#64748B'},grid:{padding:16,gap:12,maxWidth:1100,width:'100%',alignSelf:'center'},desktopGrid:{flexDirection:'row',flexWrap:'wrap',padding:28,gap:18},card:{backgroundColor:'#fff',padding:17,borderRadius:14,borderWidth:1,borderColor:'#E2E8F0',flexDirection:'row',alignItems:'center',gap:14},desktopCard:{width:'48%',minHeight:105},icon:{width:52,height:52,borderRadius:14,alignItems:'center',justifyContent:'center'},copy:{flex:1},cardTitle:{fontSize:17,fontWeight:'700',color:'#172033'},description:{fontSize:13,color:'#64748B',marginTop:4},
+const createStyles = (c: Palette) => StyleSheet.create({
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  cell: { flexGrow: 1 },
+  card: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  copy: { flex: 1 },
+  cardTitle: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: c.text },
+  description: { fontSize: fontSize.sm, color: c.textMuted, marginTop: 3 },
 });

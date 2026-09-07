@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, useWindowDimensions } from 'react-native';
 import { ChartBar as BarChart3, Calendar, TrendingUp, TrendingDown, Package, Users, DollarSign, RefreshCw } from 'lucide-react-native';
+import { CONTENT_MAX_WIDTH } from '../../constants/layout';
+import { Palette, fontSize } from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { formatCurrency } from '../../utils/currency';
 import { useProducts } from '../../hooks/useProducts';
@@ -11,8 +14,57 @@ import { useExpenses } from '../../hooks/useExpenses';
 import { supabase } from '../../utils/supabase';
 import { grossMarginPercentage, grossProfit, lineTotal } from '../../utils/calculations';
 
+/**
+ * Report metric tile. Module scope so it is not redeclared as a fresh component
+ * type on every render of the reports screen.
+ */
+function StatCard({
+  title,
+  value,
+  icon,
+  trend,
+  trendValue,
+  color,
+  subtitle,
+  styles,
+  c,
+}: {
+  title: string;
+  value: string;
+  icon: React.ReactNode;
+  trend?: 'up' | 'down';
+  trendValue?: number;
+  color?: string;
+  subtitle?: string;
+  styles: ReturnType<typeof createStyles>;
+  c: Palette;
+}) {
+  const accent = color ?? c.primary;
+  const rising = trend === 'up';
+
+  return (
+    <View style={styles.statCard}>
+      <View style={styles.statHeader}>
+        <View style={[styles.iconContainer, { backgroundColor: `${accent}20` }]}>{icon}</View>
+        {trend && trendValue !== undefined && (
+          <View style={[styles.trendContainer, { backgroundColor: rising ? c.successTint : c.dangerTint }]}>
+            {rising ? <TrendingUp size={14} color={c.success} /> : <TrendingDown size={14} color={c.danger} />}
+            <Text style={[styles.trendText, { color: rising ? c.success : c.danger }]}>
+              {Math.abs(trendValue).toFixed(1)}%
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statTitle}>{title}</Text>
+      {subtitle && <Text style={styles.statSubtitle}>{subtitle}</Text>}
+    </View>
+  );
+}
+
 export default function ReportsScreen() {
   const { t } = useLanguage();
+  const { colors: c } = useTheme();
   const { products, fetchProducts } = useProducts();
   const { customers, fetchCustomers } = useCustomers();
   const { sales, fetchSales } = useSales();
@@ -174,48 +226,8 @@ export default function ReportsScreen() {
   const lowStockItems = getLowStockItems();
   const topProducts = getTopSellingProducts();
 
-  const StatCard = ({ 
-    title, 
-    value, 
-    icon, 
-    trend, 
-    trendValue, 
-    color = '#2563EB',
-    subtitle 
-  }: {
-    title: string;
-    value: string;
-    icon: React.ReactNode;
-    trend?: 'up' | 'down';
-    trendValue?: number;
-    color?: string;
-    subtitle?: string;
-  }) => (
-    <View style={styles.statCard}>
-      <View style={styles.statHeader}>
-        <View style={[styles.iconContainer, { backgroundColor: `${color}20` }]}>
-          {icon}
-        </View>
-        {trend && trendValue !== undefined && (
-          <View style={[styles.trendContainer, { backgroundColor: trend === 'up' ? '#16A34A20' : '#DC262620' }]}>
-            {trend === 'up' ? (
-              <TrendingUp size={14} color="#16A34A" />
-            ) : (
-              <TrendingDown size={14} color="#DC2626" />
-            )}
-            <Text style={[styles.trendText, { color: trend === 'up' ? '#16A34A' : '#DC2626' }]}>
-              {Math.abs(trendValue).toFixed(1)}%
-            </Text>
-          </View>
-        )}
-      </View>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statTitle}>{title}</Text>
-      {subtitle && <Text style={styles.statSubtitle}>{subtitle}</Text>}
-    </View>
-  );
 
-  const styles = createStyles(width);
+  const styles = useMemo(() => createStyles(width, c), [width, c]);
 
   return (
     <View style={styles.container}>
@@ -226,7 +238,7 @@ export default function ReportsScreen() {
           onPress={onRefresh}
           disabled={refreshing}
         >
-          <RefreshCw size={20} color="#FFFFFF" />
+          <RefreshCw size={18} color={c.textInverse} />
         </TouchableOpacity>
       </View>
 
@@ -245,7 +257,7 @@ export default function ReportsScreen() {
       </View>
 
       <ScrollView
-        style={styles.content}
+        style={[styles.content, styles.contentColumn]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -287,31 +299,39 @@ export default function ReportsScreen() {
         <Text style={styles.sectionTitle}>{t('keyMetrics')}</Text>
         <View style={styles.statsGrid}>
           <StatCard
+            styles={styles}
+            c={c}
             title={t('totalSales')}
             value={formatCurrency(profitLoss.revenue)}
-            icon={<DollarSign size={24} color="#2563EB" />}
+            icon={<DollarSign size={20} color={c.primary} />}
           />
           <StatCard
+            styles={styles}
+            c={c}
             title={t('inventoryValue')}
             value={formatCurrency(inventory.sellingValue)}
-            icon={<Package size={24} color="#7C3AED" />}
+            icon={<Package size={20} color={c.info} />}
             subtitle={`${inventory.totalItems} ${t('items')}`}
-            color="#7C3AED"
+            color={c.info}
           />
         </View>
 
         <View style={styles.statsGrid}>
           <StatCard
+            styles={styles}
+            c={c}
             title={t('activeCustomers')}
             value={customers.length.toString()}
-            icon={<Users size={24} color="#16A34A" />}
-            color="#16A34A"
+            icon={<Users size={20} color={c.success} />}
+            color={c.success}
           />
           <StatCard
+            styles={styles}
+            c={c}
             title={t('totalLoans')}
             value={formatCurrency(customers.reduce((total, c) => total + c.loanBalance, 0))}
-            icon={<TrendingDown size={24} color="#D97706" />}
-            color="#D97706"
+            icon={<TrendingDown size={20} color={c.warning} />}
+            color={c.warning}
           />
         </View>
 
@@ -406,12 +426,20 @@ export default function ReportsScreen() {
   );
 }
 
-const createStyles = (viewportWidth: number) => {
+const createStyles = (viewportWidth: number, c: Palette) => {
   const width = Math.min(Math.max(viewportWidth, 320), 480);
   return StyleSheet.create({
+  // Content column cap. These screens size their interior from a viewport
+  // clamped to 480px, so without a max width a desktop rendered phone-scale
+  // text stretched across the whole monitor.
+  contentColumn: {
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH.wide,
+    alignSelf: 'center',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: 'row',
@@ -419,17 +447,17 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
     padding: width * 0.04,
     paddingTop: width * 0.04,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
   },
   title: {
-    fontSize: width * 0.06,
+    fontSize: fontSize.xxl,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   refreshButton: {
-    backgroundColor: '#7C3AED',
+    backgroundColor: c.info,
     width: width * 0.1,
     height: width * 0.1,
     borderRadius: width * 0.05,
@@ -441,11 +469,11 @@ const createStyles = (viewportWidth: number) => {
   },
   periodSelector: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     paddingHorizontal: width * 0.04,
     paddingVertical: width * 0.03,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
     gap: width * 0.02,
   },
   periodButton: {
@@ -456,24 +484,24 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
   },
   activePeriod: {
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
   },
   periodText: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     fontWeight: '600',
   },
   activePeriodText: {
-    color: '#FFFFFF',
+    color: c.textInverse,
   },
   content: {
     flex: 1,
     padding: width * 0.04,
   },
   sectionTitle: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.03,
     marginTop: width * 0.04,
   },
@@ -486,7 +514,7 @@ const createStyles = (viewportWidth: number) => {
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.04,
     padding: width * 0.04,
     shadowColor: '#000',
@@ -517,26 +545,26 @@ const createStyles = (viewportWidth: number) => {
     borderRadius: width * 0.02,
   },
   trendText: {
-    fontSize: width * 0.03,
+    fontSize: fontSize.sm,
     marginLeft: width * 0.01,
   },
   statValue: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   statTitle: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     marginTop: width * 0.01,
   },
   statSubtitle: {
-    fontSize: width * 0.03,
-    color: '#9CA3AF',
+    fontSize: fontSize.sm,
+    color: c.textSubtle,
     marginTop: width * 0.01,
   },
   financialSummaryCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.04,
     padding: width * 0.04,
     marginBottom: width * 0.04,
@@ -559,33 +587,33 @@ const createStyles = (viewportWidth: number) => {
     justifyContent: 'center',
   },
   profitSide: {
-    backgroundColor: '#16A34A20',
+    backgroundColor: c.successTint,
   },
   lossSide: {
-    backgroundColor: '#DC262620',
+    backgroundColor: c.dangerTint,
   },
   financialSideTitle: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   financialSideValue: {
-    fontSize: width * 0.045,
+    fontSize: fontSize.lg,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   financialDetails: {
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: c.border,
     paddingTop: width * 0.03,
   },
   financialDetail: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
     marginBottom: width * 0.01,
   },
   productPerformanceCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.04,
     padding: width * 0.04,
     marginBottom: width * 0.04,
@@ -600,48 +628,48 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
     paddingVertical: width * 0.03,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: c.surfaceSunken,
   },
   productRank: {
     width: width * 0.08,
     height: width * 0.08,
     borderRadius: width * 0.04,
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: width * 0.03,
   },
   rankNumber: {
-    color: '#FFFFFF',
-    fontSize: width * 0.035,
+    color: c.textInverse,
+    fontSize: fontSize.sm,
     fontWeight: 'bold',
   },
   productDetails: {
     flex: 1,
   },
   productName: {
-    fontSize: width * 0.035,
+    fontSize: fontSize.sm,
     fontWeight: '600',
-    color: '#111827',
+    color: c.text,
   },
   productBrand: {
-    fontSize: width * 0.03,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   productStats: {
     alignItems: 'flex-end',
   },
   productValue: {
-    fontSize: width * 0.035,
+    fontSize: fontSize.sm,
     fontWeight: 'bold',
-    color: '#16A34A',
+    color: c.success,
   },
   productQty: {
-    fontSize: width * 0.03,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   customerInsights: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.04,
     padding: width * 0.04,
     marginBottom: width * 0.08,
@@ -657,19 +685,19 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
     paddingVertical: width * 0.03,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: c.surfaceSunken,
   },
   insightLabel: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   insightValue: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
   },
   lowStockCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
     borderRadius: width * 0.04,
     padding: width * 0.04,
     shadowColor: '#000',
@@ -685,28 +713,28 @@ const createStyles = (viewportWidth: number) => {
     alignItems: 'center',
     paddingVertical: width * 0.02,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: c.surfaceSunken,
   },
   lowStockName: {
-    fontSize: width * 0.035,
+    fontSize: fontSize.sm,
     fontWeight: '600',
-    color: '#111827',
+    color: c.text,
   },
   lowStockBrand: {
-    fontSize: width * 0.03,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   lowStockQty: {
     alignItems: 'flex-end',
   },
   lowStockLabel: {
-    fontSize: width * 0.03,
-    color: '#9CA3AF',
+    fontSize: fontSize.sm,
+    color: c.textSubtle,
   },
   lowStockNumber: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: 'bold',
-    color: '#DC2626',
+    color: c.danger,
   },
   });
 };

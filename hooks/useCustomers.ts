@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabase';
 
+/**
+ * Who the shop is dealing with.
+ *
+ * A winga is a middleman who takes stock to resell rather than a walk-in buyer.
+ * Same row, same balance and same loan history — only the relationship differs,
+ * which is why this is a flag and not a second table.
+ */
+export type ContactType = 'customer' | 'winga';
+
 export interface Customer {
   id: string;
   name: string;
@@ -9,6 +18,7 @@ export interface Customer {
   address: string;
   loyaltyPoints: number;
   loanBalance: number;
+  contactType: ContactType;
   created_at: string;
 }
 
@@ -46,6 +56,7 @@ export function useCustomers() {
             address: payload.new.address ?? '',
             loyaltyPoints: payload.new.loyalty_points || 0,
             loanBalance: payload.new.loan_balance || 0,
+            contactType: (payload.new.type as ContactType) ?? 'customer',
           };
           setCustomers((prev) => [...prev, newCustomer as Customer]);
         }
@@ -65,6 +76,7 @@ export function useCustomers() {
             address: payload.new.address ?? '',
             loyaltyPoints: payload.new.loyalty_points || 0,
             loanBalance: payload.new.loan_balance || 0,
+            contactType: (payload.new.type as ContactType) ?? 'customer',
           };
           setCustomers((prev) =>
             prev.map((customer) =>
@@ -110,6 +122,7 @@ export function useCustomers() {
       address: customer.address ?? '',
       loyaltyPoints: customer.loyalty_points || 0,
       loanBalance: customer.loan_balance || 0,
+      contactType: (customer.type as ContactType) ?? 'customer',
     }));
 
     setCustomers(mappedCustomers);
@@ -130,6 +143,7 @@ export function useCustomers() {
           address: customerData.address,
           loyalty_points: 0,
           loan_balance: 0,
+          type: customerData.contactType ?? 'customer',
         },
       ])
       .select()
@@ -145,6 +159,7 @@ export function useCustomers() {
       ...data,
       loyaltyPoints: data.loyalty_points || 0,
       loanBalance: data.loan_balance || 0,
+      contactType: (data.type as ContactType) ?? 'customer',
     };
   };
 
@@ -158,6 +173,7 @@ export function useCustomers() {
         address: customerData.address,
         loyalty_points: customerData.loyaltyPoints,
         loan_balance: customerData.loanBalance,
+        type: customerData.contactType,
       })
       .eq('id', id)
       .select()
@@ -173,6 +189,7 @@ export function useCustomers() {
       ...data,
       loyaltyPoints: data.loyalty_points || 0,
       loanBalance: data.loan_balance || 0,
+      contactType: (data.type as ContactType) ?? 'customer',
     };
   };
 
@@ -240,6 +257,7 @@ export function useCustomers() {
       ...updatedCustomer,
       loyaltyPoints: updatedCustomer.loyalty_points || 0,
       loanBalance: updatedCustomer.loan_balance || 0,
+      contactType: (updatedCustomer.type as ContactType) ?? 'customer',
     };
   };
 

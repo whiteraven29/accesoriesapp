@@ -1,12 +1,16 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../utils/supabase';
+import { Palette, fontSize } from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { getAuthRedirectUrl } from '../../utils/authRedirect';
+import { authErrorMessage } from '../../utils/authErrors';
 
 export default function ForgotPasswordScreen() {
   const { t } = useLanguage();
+  const { colors: c } = useTheme();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const [username, setUsername] = useState('');
@@ -14,7 +18,7 @@ export default function ForgotPasswordScreen() {
 
   const handleResetPassword = async () => {
     if (!username) {
-      Alert.alert(t('error'), 'Please enter your email');
+      Alert.alert(t('error'), t('enterEmailFirst'));
       return;
     }
 
@@ -25,19 +29,20 @@ export default function ForgotPasswordScreen() {
       });
 
       if (error) {
-        Alert.alert(t('error'), error.message);
+        // Password reset draws on the same hourly email quota as signup.
+        Alert.alert(t('error'), authErrorMessage(error, t));
       } else {
-        Alert.alert('Success', 'Password reset email sent! Please check your email.');
+        Alert.alert(t('success'), t('verificationSent'));
         router.replace('/auth/login');
       }
     } catch (error) {
-      Alert.alert(t('error'), 'An unexpected error occurred');
+      Alert.alert(t('error'), t('unexpectedError'));
     } finally {
       setLoading(false);
     }
   };
 
-  const styles = createStyles(width);
+  const styles = useMemo(() => createStyles(width, c), [width, c]);
 
   return (
     <View style={styles.container}>
@@ -56,7 +61,7 @@ export default function ForgotPasswordScreen() {
             placeholder="Enter your email"
             keyboardType="email-address"
             autoCapitalize="none"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={c.textSubtle}
           />
         </View>
 
@@ -83,12 +88,12 @@ export default function ForgotPasswordScreen() {
   );
 }
 
-const createStyles = (viewportWidth: number) => {
+const createStyles = (viewportWidth: number, c: Palette) => {
   const width = Math.min(Math.max(viewportWidth, 320), 480);
   return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: c.background,
     padding: width * 0.05,
     justifyContent: 'center',
   },
@@ -97,14 +102,14 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.1,
   },
   title: {
-    fontSize: width * 0.08,
+    fontSize: fontSize.xxxl,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.02,
   },
   subtitle: {
-    fontSize: width * 0.04,
-    color: '#6B7280',
+    fontSize: fontSize.md,
+    color: c.textMuted,
     textAlign: 'center',
   },
   form: {
@@ -116,33 +121,33 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.05,
   },
   inputLabel: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: '600',
-    color: '#374151',
+    color: c.textMuted,
     marginBottom: width * 0.02,
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
     padding: width * 0.04,
-    fontSize: width * 0.04,
-    color: '#111827',
-    backgroundColor: '#FFFFFF',
+    fontSize: fontSize.md,
+    color: c.text,
+    backgroundColor: c.surface,
   },
   button: {
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
     paddingVertical: width * 0.04,
     borderRadius: width * 0.025,
     alignItems: 'center',
     marginTop: width * 0.05,
   },
   buttonDisabled: {
-    backgroundColor: '#9CA3AF',
+    backgroundColor: c.textSubtle,
   },
   buttonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.04,
+    color: c.textInverse,
+    fontSize: fontSize.md,
     fontWeight: '600',
   },
   linkButton: {
@@ -150,11 +155,11 @@ const createStyles = (viewportWidth: number) => {
     marginTop: width * 0.05,
   },
   linkText: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   linkTextBold: {
-    color: '#2563EB',
+    color: c.primary,
     fontWeight: '600',
   },
   });

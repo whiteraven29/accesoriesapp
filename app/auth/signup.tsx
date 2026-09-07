@@ -1,13 +1,17 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../utils/supabase';
+import { Palette, fontSize } from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useLanguage } from '../../hooks/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { getAuthRedirectUrl } from '../../utils/authRedirect';
+import { MIN_PASSWORD_LENGTH, authErrorMessage } from '../../utils/authErrors';
 
 export default function SignupScreen() {
   const { t } = useLanguage();
+  const { colors: c } = useTheme();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const [username, setUsername] = useState('');
@@ -23,60 +27,70 @@ export default function SignupScreen() {
 
   const handleSignup = async () => {
     if (!username || !email || !password || !confirmPassword || !shopName) {
-      Alert.alert(t('error'), 'Please fill in all required fields');
+      Alert.alert(t('error'), t('fillAllFields'));
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert(t('error'), 'Passwords do not match');
+      Alert.alert(t('error'), t('passwordsDoNotMatch'));
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert(t('error'), 'Password must be at least 6 characters');
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      Alert.alert(t('error'), t('passwordTooShort'));
       return;
     }
 
     setLoading(true);
     try {
-      // Sign up the user with Supabase Auth
+      // Check the username before creating the account. `user_profiles.username`
+      // is UNIQUE and the signup trigger writes it, so a clash otherwise aborts
+      // the whole signup with a raw constraint error. RLS hides the table from
+      // anonymous visitors, so this goes through a SECURITY DEFINER function
+      // that answers availability and nothing else.
+      const { data: available, error: checkError } = await supabase.rpc('username_available', {
+        p_username: username.trim(),
+      });
+
+      if (!checkError && available === false) {
+        Alert.alert(t('error'), t('usernameTaken'));
+        return;
+      }
+
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email,
+        email: email.trim().toLowerCase(),
         password,
         options: {
           emailRedirectTo: getAuthRedirectUrl(),
           data: {
-            username: username,
-            full_name: fullName,
-            phone: phone,
-            shop_name: shopName,
+            username: username.trim(),
+            full_name: fullName.trim(),
+            phone: phone.trim(),
+            shop_name: shopName.trim(),
           }
         }
       });
 
       if (signUpError) {
-        Alert.alert(t('error'), signUpError.message);
+        Alert.alert(t('error'), authErrorMessage(signUpError, t));
         return;
       }
 
       if (authData.user) {
         // The database trigger creates the profile even when email confirmation
         // means the new user does not have an authenticated session yet.
-        Alert.alert(
-          'Success', 
-          'Account created successfully! Please check your email to verify your account.'
-        );
+        Alert.alert(t('success'), t('signupSuccess'));
         router.replace('/auth/login');
       }
     } catch (error) {
-      Alert.alert(t('error'), 'An unexpected error occurred');
+      Alert.alert(t('error'), t('unexpectedError'));
       console.error(error);
     } finally {
       setLoading(false);
     }
   };
 
-  const styles = createStyles(width);
+  const styles = useMemo(() => createStyles(width, c), [width, c]);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -95,7 +109,7 @@ export default function SignupScreen() {
               onChangeText={setUsername}
               placeholder="Enter your username"
               autoCapitalize="none"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={c.textSubtle}
             />
           </View>
 
@@ -107,7 +121,7 @@ export default function SignupScreen() {
               onChangeText={setFullName}
               placeholder="Enter your full name"
               autoCapitalize="words"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={c.textSubtle}
             />
           </View>
 
@@ -120,7 +134,7 @@ export default function SignupScreen() {
               placeholder="Enter your email"
               keyboardType="email-address"
               autoCapitalize="none"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={c.textSubtle}
             />
           </View>
 
@@ -132,7 +146,7 @@ export default function SignupScreen() {
               onChangeText={setPhone}
               placeholder="Enter your phone number"
               keyboardType="phone-pad"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={c.textSubtle}
             />
           </View>
 
@@ -144,7 +158,7 @@ export default function SignupScreen() {
               onChangeText={setShopName}
               placeholder="Enter your shop name"
               autoCapitalize="words"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={c.textSubtle}
             />
           </View>
 
@@ -157,7 +171,7 @@ export default function SignupScreen() {
                 onChangeText={setPassword}
                 placeholder="Enter your password"
                 secureTextEntry={!showPassword}
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={c.textSubtle}
               />
               <TouchableOpacity
                 style={styles.eyeIcon}
@@ -165,8 +179,8 @@ export default function SignupScreen() {
               >
                 <Ionicons
                   name={showPassword ? 'eye-off' : 'eye'}
-                  size={20}
-                  color="#6B7280"
+                  size={18}
+                  color={c.textMuted}
                 />
               </TouchableOpacity>
             </View>
@@ -181,7 +195,7 @@ export default function SignupScreen() {
                 onChangeText={setConfirmPassword}
                 placeholder="Confirm your password"
                 secureTextEntry={!showConfirmPassword}
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={c.textSubtle}
               />
               <TouchableOpacity
                 style={styles.eyeIcon}
@@ -189,8 +203,8 @@ export default function SignupScreen() {
               >
                 <Ionicons
                   name={showConfirmPassword ? 'eye-off' : 'eye'}
-                  size={20}
-                  color="#6B7280"
+                  size={18}
+                  color={c.textMuted}
                 />
               </TouchableOpacity>
             </View>
@@ -202,7 +216,7 @@ export default function SignupScreen() {
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={c.textInverse} />
             ) : (
               <Text style={styles.buttonText}>Sign Up</Text>
             )}
@@ -222,12 +236,12 @@ export default function SignupScreen() {
   );
 }
 
-const createStyles = (viewportWidth: number) => {
+const createStyles = (viewportWidth: number, c: Palette) => {
   const width = Math.min(Math.max(viewportWidth, 320), 480);
   return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: c.background,
   },
   content: {
     flex: 1,
@@ -243,14 +257,14 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.08,
   },
   title: {
-    fontSize: width * 0.08,
+    fontSize: fontSize.xxxl,
     fontWeight: 'bold',
-    color: '#111827',
+    color: c.text,
     marginBottom: width * 0.02,
   },
   subtitle: {
-    fontSize: width * 0.04,
-    color: '#6B7280',
+    fontSize: fontSize.md,
+    color: c.textMuted,
   },
   form: {
     width: '100%',
@@ -259,39 +273,39 @@ const createStyles = (viewportWidth: number) => {
     marginBottom: width * 0.05,
   },
   inputLabel: {
-    fontSize: width * 0.04,
+    fontSize: fontSize.md,
     fontWeight: '600',
-    color: '#374151',
+    color: c.textMuted,
     marginBottom: width * 0.02,
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
     padding: width * 0.04,
-    fontSize: width * 0.04,
-    color: '#111827',
-    backgroundColor: '#FFFFFF',
+    fontSize: fontSize.md,
+    color: c.text,
+    backgroundColor: c.surface,
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: width * 0.025,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.surface,
   },
   passwordInput: {
     flex: 1,
     padding: width * 0.04,
-    fontSize: width * 0.04,
-    color: '#111827',
+    fontSize: fontSize.md,
+    color: c.text,
   },
   eyeIcon: {
     padding: width * 0.03,
   },
   button: {
-    backgroundColor: '#2563EB',
+    backgroundColor: c.primary,
     paddingVertical: width * 0.04,
     borderRadius: width * 0.025,
     alignItems: 'center',
@@ -300,11 +314,11 @@ const createStyles = (viewportWidth: number) => {
     justifyContent: 'center',
   },
   buttonDisabled: {
-    backgroundColor: '#9CA3AF',
+    backgroundColor: c.textSubtle,
   },
   buttonText: {
-    color: '#FFFFFF',
-    fontSize: width * 0.04,
+    color: c.textInverse,
+    fontSize: fontSize.md,
     fontWeight: '600',
   },
   linkButton: {
@@ -312,11 +326,11 @@ const createStyles = (viewportWidth: number) => {
     marginTop: width * 0.05,
   },
   linkText: {
-    fontSize: width * 0.035,
-    color: '#6B7280',
+    fontSize: fontSize.sm,
+    color: c.textMuted,
   },
   linkTextBold: {
-    color: '#2563EB',
+    color: c.primary,
     fontWeight: '600',
   },
   });

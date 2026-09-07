@@ -103,44 +103,40 @@ export function useLosses() {
     setLosses(mappedLosses);
   };
 
-  const addLoss = async (lossData: Omit<Loss, 'id' | 'created_at' | 'product'>) => {
+  /**
+   * Records a loss through the `record_loss` RPC.
+   *
+   * The previous implementation inserted the loss row and never touched stock,
+   * so a stolen handset hit the P&L and stayed on the shelf as sellable. The
+   * RPC now writes off the stock (or the specific IMEI units) in the same
+   * transaction and values the loss at cost.
+   */
+  const addLoss = async (lossData: {
+    productId: string;
+    quantity: number;
+    reason: string;
+    description?: string;
+    /** Required when the product is serialised. */
+    unitIds?: string[];
+  }): Promise<{ id: string | null; error: string | null }> => {
     const { data: user } = await supabase.auth.getUser();
-    if (!user.user) return null;
+    if (!user.user) return { id: null, error: 'Not signed in' };
 
-    const { data, error } = await supabase
-      .from('losses')
-      .insert([
-        {
-          user_id: user.user.id,
-          product_id: lossData.productId,
-          quantity: lossData.quantity,
-          reason: lossData.reason,
-          description: lossData.description,
-          loss_value: lossData.lossValue,
-        },
-      ])
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('record_loss', {
+      p_product_id: lossData.productId,
+      p_quantity: lossData.quantity,
+      p_reason: lossData.reason,
+      p_description: lossData.description ?? null,
+      p_unit_ids: lossData.unitIds ?? null,
+    });
 
     if (error) {
-      console.error('Error adding loss:', error);
-      return null;
+      console.error('Error recording loss:', error);
+      return { id: null, error: error.message };
     }
 
-    // Fetch the product details
-    const { data: product } = await supabase
-      .from('products')
-      .select('id, name, brand')
-      .eq('id', lossData.productId)
-      .single();
-
-    // Map the returned data to match the interface
-    return {
-      ...data,
-      productId: data.product_id,
-      lossValue: data.loss_value,
-      product,
-    };
+    await fetchLosses();
+    return { id: data as string, error: null };
   };
 
   const updateLoss = async (id: string, lossData: Partial<Omit<Loss, 'id' | 'created_at' | 'product'>>) => {
